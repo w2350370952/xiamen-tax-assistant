@@ -1,22 +1,4 @@
-# Python
-backend/.venv/
-backend/**/__pycache__/
-backend/.pytest_cache/
-backend/.env
-backend/data/*.db
-backend/uploads/*.pdf
-
-# Node
 node_modules/
 dist/
-.next/
-.sites-runtime/
-.wrangler/
-frontend/node_modules/
-frontend/dist/
-
-# Editors and OS
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
+.env*
+*.log
