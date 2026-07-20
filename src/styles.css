@@ -652,7 +652,12 @@ header p {
   margin-top: 3px;
   color: var(--muted);
 }
-.safe a {
+.safe a,
+.safe button {
+  padding: 0;
+  border: 0;
+  color: var(--blue);
+  background: transparent;
   font-size: 13px;
   font-weight: 700;
 }
