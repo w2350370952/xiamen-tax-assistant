@@ -33,7 +33,7 @@ function StudentApp(){
 
   useEffect(()=>{
     const clock=setInterval(()=>setNow(new Date()),1000);
-    const syncCourses=()=>fetch(`/api/courses?refresh=${Date.now()}`,{cache:"no-store"}).then(r=>r.ok?r.json():Promise.reject()).then(d=>{
+    const syncCourses=()=>fetch(`/api/live-courses?refresh=${Date.now()}`,{cache:"no-store"}).then(r=>r.ok?r.json():Promise.reject()).then(d=>{
       if(Array.isArray(d.courses))setCourses(d.courses);
       if(d.version)setVersion(d.version);
       setSynced(true);
