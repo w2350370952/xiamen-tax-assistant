@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && cp -R edge-functions dist/edge-functions && cp package.json dist/package.json",
     "preview": "vite preview"
   },
   "dependencies": {
