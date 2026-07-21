@@ -229,7 +229,7 @@ export async function onRequest({ request }) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
   try {
-    if (path === "/api/courses" && request.method === "GET") {
+    if ((path === "/api/live-courses" || path === "/api/courses") && request.method === "GET") {
       const state = await readState();
       return json({ courses: state.courses || [], version: state.version || null }, 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
     }
