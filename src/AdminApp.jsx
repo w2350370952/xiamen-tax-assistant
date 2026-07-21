@@ -60,7 +60,7 @@ export default function AdminApp() {
     if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) { setNotice("请选择 PDF 文件"); return; }
     setBusy(true); setProgress(1); setNotice("正在读取 PDF，请稍候…");
     try {
-      const { parseCoursePdf } = await import("./pdf-parser");
+      const { parseCoursePdf } = await import("./pdf-parser-edgeone.js");
       const result = await parseCoursePdf(file, setProgress);
       if (!result.courses.length) throw new Error(result.warnings.join("；") || "未识别到课程");
       const record = await api("/api/admin/uploads", { method: "POST", body: JSON.stringify({ filename: file.name, courses: result.courses, warnings: result.warnings }) });
