@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && cp -R cloud-functions dist/cloud-functions && cp package.json dist/package.json",
+    "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
