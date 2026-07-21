@@ -231,7 +231,7 @@ export async function onRequest({ request }) {
   try {
     if (path === "/api/courses" && request.method === "GET") {
       const state = await readState();
-      return json({ courses: state.courses || [], version: state.version || null }, 200, { "Cache-Control": "public, max-age=30" });
+      return json({ courses: state.courses || [], version: state.version || null }, 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
     }
     if (path.startsWith("/api/admin/")) return await adminRoutes(request, url, path);
     return fail("接口不存在", 404);
