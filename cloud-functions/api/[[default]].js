@@ -86,6 +86,14 @@ function nextVersion(label) {
   return match ? `v${match[1]}.${Number(match[2]) + 1}` : "v1.1";
 }
 
+function markCourseUpdate(state, remark) {
+  state.version = {
+    label: nextVersion(state.version?.label),
+    updated_at: new Date().toISOString(),
+    remark,
+  };
+}
+
 async function login(request) {
   const body = await bodyJson(request);
   const userOk = text(body.username, 80) === ADMIN_USER;
@@ -107,6 +115,38 @@ async function adminRoutes(request, url, path) {
   if (path === "/api/admin/logout" && request.method === "POST") return logout(request);
   if (!(await requireAdmin(request))) return fail("管理员登录已失效，请重新登录", 401);
   if (path === "/api/admin/session" && request.method === "GET") return json({ authenticated: true });
+
+  if (path === "/api/admin/courses" && request.method === "GET") {
+    const state = await readState();
+    return json({ courses: state.courses || [], version: state.version || null });
+  }
+
+  if (path.startsWith("/api/admin/courses/") && request.method === "PATCH") {
+    const courseId = decodeURIComponent(path.slice("/api/admin/courses/".length));
+    const body = await bodyJson(request);
+    const state = await readState();
+    const index = (state.courses || []).findIndex((item) => item.id === courseId);
+    if (index < 0) return fail("未找到已发布课程", 404);
+    const course = sanitizeCourse(body.course, courseId);
+    course.id = courseId;
+    if (!validCourse(course)) return fail("日期、星期、时段、时间和课程名称为必填项");
+    state.courses[index] = course;
+    state.courses.sort((a, b) => `${a.date} ${a.start_time}`.localeCompare(`${b.date} ${b.start_time}`));
+    markCourseUpdate(state, `管理员调整课程：${course.course_name}`);
+    await writeState(state);
+    return json({ course, version: state.version });
+  }
+
+  if (path.startsWith("/api/admin/courses/") && request.method === "DELETE") {
+    const courseId = decodeURIComponent(path.slice("/api/admin/courses/".length));
+    const state = await readState();
+    const course = (state.courses || []).find((item) => item.id === courseId);
+    if (!course) return fail("未找到已发布课程", 404);
+    state.courses = state.courses.filter((item) => item.id !== courseId);
+    markCourseUpdate(state, `管理员删除课程：${course.course_name}`);
+    await writeState(state);
+    return json({ ok: true, version: state.version });
+  }
 
   if (path === "/api/admin/uploads" && request.method === "GET") {
     const state = await readState();
