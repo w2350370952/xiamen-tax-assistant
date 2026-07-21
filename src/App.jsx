@@ -31,7 +31,20 @@ function StudentApp(){
   const [selectedDay,setSelectedDay]=useState(iso(initialFocus));
   const [synced,setSynced]=useState(false);
 
-  useEffect(()=>{ const timer=setInterval(()=>setNow(new Date()),1000); fetch("/api/courses").then(r=>r.ok?r.json():Promise.reject()).then(d=>{ if(d.courses?.length)setCourses(d.courses); if(d.version)setVersion(d.version); setSynced(true); }).catch(()=>setSynced(false)); return()=>clearInterval(timer); },[]);
+  useEffect(()=>{
+    const clock=setInterval(()=>setNow(new Date()),1000);
+    const syncCourses=()=>fetch(`/api/courses?refresh=${Date.now()}`,{cache:"no-store"}).then(r=>r.ok?r.json():Promise.reject()).then(d=>{
+      if(Array.isArray(d.courses))setCourses(d.courses);
+      if(d.version)setVersion(d.version);
+      setSynced(true);
+    }).catch(()=>setSynced(false));
+    const onVisible=()=>{if(document.visibilityState==="visible")syncCourses();};
+    syncCourses();
+    const courseTimer=setInterval(syncCourses,30000);
+    document.addEventListener("visibilitychange",onVisible);
+    window.addEventListener("focus",syncCourses);
+    return()=>{clearInterval(clock);clearInterval(courseTimer);document.removeEventListener("visibilitychange",onVisible);window.removeEventListener("focus",syncCourses);};
+  },[]);
   const today=iso(now), todayCourses=courses.filter(c=>c.date===today);
   const next=courses.find(c=>`${c.date}T${c.start_time}`>`${today}T${now.toTimeString().slice(0,5)}`);
   const weekStart=monday(weekAnchor), weekDays=Array.from({length:7},(_,i)=>addDays(weekStart,i));
