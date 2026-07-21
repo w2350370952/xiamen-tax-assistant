@@ -1,11 +1,9 @@
-import { getDocument } from "pdfjs-dist";
-import { WorkerMessageHandler } from "pdfjs-dist/build/pdf.worker.mjs";
+import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import { parseExtractedPages } from "./pdf-parser-core";
 
-// EdgeOne serves standalone .mjs assets as application/octet-stream. Bundle the
-// handler into this module so PDF.js can use its in-page worker fallback without
-// downloading a separate module that the browser would reject.
-globalThis.pdfjsWorker = { WorkerMessageHandler };
+// vite.config.js emits the upstream module with a .js extension so EdgeOne
+// serves it using a JavaScript MIME type instead of application/octet-stream.
+GlobalWorkerOptions.workerSrc = "/assets/pdf.worker.js";
 
 export async function parseCoursePdf(file, onProgress = () => {}) {
   const data = new Uint8Array(await file.arrayBuffer());
