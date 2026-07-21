@@ -7,6 +7,7 @@ const COOKIE = "xnai_admin";
 const ADMIN_USER = "xnaitax2025";
 const ADMIN_PASSWORD_SHA256 = "3d4a6df67e692969e3092a220365c136d761097075b504bea76c0b2858a22bb5";
 const SESSION_SECONDS = 60 * 60 * 12;
+const MAJOR_KEYS = ["tax", "accounting", "audit", "finance"];
 
 const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), {
   status,
@@ -30,9 +31,30 @@ function cookieValue(request, name) {
   return match ? decodeURIComponent(match.slice(name.length + 1)) : "";
 }
 
+const defaultVersion = (remark = "暂无已发布课程") => ({ label: "v1.0", updated_at: null, remark });
+const majorKey = (value) => MAJOR_KEYS.includes(value) ? value : "tax";
+
+function normalizeState(raw) {
+  const state = raw || {};
+  const legacyTax = {
+    courses: Array.isArray(state.courses) ? state.courses : [],
+    version: state.version || defaultVersion("内置税务课程数据"),
+  };
+  const majors = state.majors || { tax: legacyTax };
+  for (const key of MAJOR_KEYS) {
+    majors[key] ||= { courses: [], version: defaultVersion() };
+    majors[key].courses = Array.isArray(majors[key].courses) ? majors[key].courses : [];
+    majors[key].version ||= defaultVersion();
+  }
+  return {
+    majors,
+    uploads: (state.uploads || []).map((upload) => ({ ...upload, major: majorKey(upload.major) })),
+  };
+}
+
 async function readState() {
   const state = await store.get(STATE_KEY, { type: "json", consistency: "strong" });
-  return state || { version: { label: "v1.0", updated_at: null, remark: "内置课程数据" }, courses: [], uploads: [] };
+  return normalizeState(state);
 }
 
 async function writeState(state) {
@@ -86,9 +108,9 @@ function nextVersion(label) {
   return match ? `v${match[1]}.${Number(match[2]) + 1}` : "v1.1";
 }
 
-function markCourseUpdate(state, remark) {
-  state.version = {
-    label: nextVersion(state.version?.label),
+function markCourseUpdate(majorData, remark) {
+  majorData.version = {
+    label: nextVersion(majorData.version?.label),
     updated_at: new Date().toISOString(),
     remark,
   };
@@ -118,39 +140,45 @@ async function adminRoutes(request, url, path) {
 
   if (path === "/api/admin/courses" && request.method === "GET") {
     const state = await readState();
-    return json({ courses: state.courses || [], version: state.version || null });
+    const major = majorKey(url.searchParams.get("major"));
+    return json({ major, courses: state.majors[major].courses, version: state.majors[major].version });
   }
 
   if (path.startsWith("/api/admin/courses/") && request.method === "PATCH") {
     const courseId = decodeURIComponent(path.slice("/api/admin/courses/".length));
     const body = await bodyJson(request);
     const state = await readState();
-    const index = (state.courses || []).findIndex((item) => item.id === courseId);
+    const major = majorKey(body.major);
+    const majorData = state.majors[major];
+    const index = majorData.courses.findIndex((item) => item.id === courseId);
     if (index < 0) return fail("未找到已发布课程", 404);
     const course = sanitizeCourse(body.course, courseId);
     course.id = courseId;
     if (!validCourse(course)) return fail("日期、星期、时段、时间和课程名称为必填项");
-    state.courses[index] = course;
-    state.courses.sort((a, b) => `${a.date} ${a.start_time}`.localeCompare(`${b.date} ${b.start_time}`));
-    markCourseUpdate(state, `管理员调整课程：${course.course_name}`);
+    majorData.courses[index] = course;
+    majorData.courses.sort((a, b) => `${a.date} ${a.start_time}`.localeCompare(`${b.date} ${b.start_time}`));
+    markCourseUpdate(majorData, `管理员调整课程：${course.course_name}`);
     await writeState(state);
-    return json({ course, version: state.version });
+    return json({ course, version: majorData.version });
   }
 
   if (path.startsWith("/api/admin/courses/") && request.method === "DELETE") {
     const courseId = decodeURIComponent(path.slice("/api/admin/courses/".length));
     const state = await readState();
-    const course = (state.courses || []).find((item) => item.id === courseId);
+    const major = majorKey(url.searchParams.get("major"));
+    const majorData = state.majors[major];
+    const course = majorData.courses.find((item) => item.id === courseId);
     if (!course) return fail("未找到已发布课程", 404);
-    state.courses = state.courses.filter((item) => item.id !== courseId);
-    markCourseUpdate(state, `管理员删除课程：${course.course_name}`);
+    majorData.courses = majorData.courses.filter((item) => item.id !== courseId);
+    markCourseUpdate(majorData, `管理员删除课程：${course.course_name}`);
     await writeState(state);
-    return json({ ok: true, version: state.version });
+    return json({ ok: true, version: majorData.version });
   }
 
   if (path === "/api/admin/uploads" && request.method === "GET") {
     const state = await readState();
-    return json({ uploads: state.uploads || [] });
+    const major = majorKey(url.searchParams.get("major"));
+    return json({ major, uploads: state.uploads.filter((upload) => upload.major === major) });
   }
 
   if (path === "/api/admin/uploads" && request.method === "POST") {
@@ -161,6 +189,7 @@ async function adminRoutes(request, url, path) {
     const upload = {
       id: randomUUID(), filename: text(body.filename, 220) || "课程总表.pdf",
       uploaded_at: new Date().toISOString(), status: "review",
+      major: majorKey(body.major),
       warnings: Array.isArray(body.warnings) ? body.warnings.slice(0, 50).map((item) => text(item, 300)) : [],
       drafts,
     };
@@ -216,11 +245,13 @@ async function adminRoutes(request, url, path) {
     const courses = upload.drafts.map((item) => sanitizeCourse(item)).filter(validCourse)
       .sort((a, b) => `${a.date} ${a.start_time}`.localeCompare(`${b.date} ${b.start_time}`));
     const now = new Date().toISOString();
-    state.courses = courses;
-    state.version = { label: nextVersion(state.version?.label), updated_at: now, remark: `来自 ${upload.filename}` };
+    const major = majorKey(upload.major);
+    const majorData = state.majors[major];
+    majorData.courses = courses;
+    majorData.version = { label: nextVersion(majorData.version?.label), updated_at: now, remark: `来自 ${upload.filename}` };
     upload.status = "published"; upload.published_at = now;
     await writeState(state);
-    return json({ ok: true, version: state.version, course_count: courses.length });
+    return json({ ok: true, major, version: majorData.version, course_count: courses.length });
   }
   return fail("管理员接口不存在", 404);
 }
@@ -229,9 +260,11 @@ export async function onRequest({ request }) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
   try {
-    if ((path === "/api/live-courses" || path === "/api/courses") && request.method === "GET") {
+    if ((path === "/api/live-courses" || path.startsWith("/api/live-courses/") || path === "/api/courses") && request.method === "GET") {
       const state = await readState();
-      return json({ courses: state.courses || [], version: state.version || null }, 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
+      const pathMajor = path.startsWith("/api/live-courses/") ? decodeURIComponent(path.slice("/api/live-courses/".length)) : null;
+      const major = majorKey(pathMajor || url.searchParams.get("major"));
+      return json({ major, courses: state.majors[major].courses, version: state.majors[major].version }, 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
     }
     if (path.startsWith("/api/admin/")) return await adminRoutes(request, url, path);
     return fail("接口不存在", 404);
