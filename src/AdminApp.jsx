@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, CheckCircle2, FileText, LogOut, Pencil, ShieldCheck, Trash2, UploadCloud, X } from "lucide-react";
+import { ArrowLeft, CalendarDays, CheckCircle2, FileText, LogOut, Pencil, ShieldCheck, Trash2, UploadCloud, X } from "lucide-react";
 
 async function api(path, options = {}) {
   const response = await fetch(path, { credentials: "same-origin", ...options, headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers } });
@@ -11,6 +11,9 @@ async function api(path, options = {}) {
 export default function AdminApp() {
   const [session, setSession] = useState(null);
   const [uploads, setUploads] = useState([]);
+  const [courses, setCourses] = useState([]);
+  const [version, setVersion] = useState(null);
+  const [section, setSection] = useState("published");
   const [activeId, setActiveId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -23,8 +26,16 @@ export default function AdminApp() {
     setActiveId((current) => current || data.uploads?.[0]?.id || null);
   };
 
+  const loadCourses = async () => {
+    const data = await api("/api/admin/courses");
+    setCourses(data.courses || []);
+    setVersion(data.version || null);
+  };
+
+  const loadAdminData = async () => Promise.all([loadUploads(), loadCourses()]);
+
   useEffect(() => {
-    api("/api/admin/session").then(() => { setSession(true); return loadUploads(); }).catch(() => setSession(false));
+    api("/api/admin/session").then(() => { setSession(true); return loadAdminData(); }).catch(() => setSession(false));
   }, []);
 
   const login = async (event) => {
@@ -33,14 +44,14 @@ export default function AdminApp() {
     const form = new FormData(event.currentTarget);
     try {
       await api("/api/admin/login", { method: "POST", body: JSON.stringify({ username: form.get("username"), password: form.get("password") }) });
-      setSession(true); await loadUploads();
+      setSession(true); await loadAdminData();
     } catch (error) { setNotice(error.message); }
     finally { setBusy(false); }
   };
 
   const logout = async () => {
     await api("/api/admin/logout", { method: "POST" }).catch(() => {});
-    setSession(false); setUploads([]); setActiveId(null);
+    setSession(false); setUploads([]); setCourses([]); setActiveId(null);
   };
 
   const uploadPdf = async (event) => {
@@ -82,8 +93,29 @@ export default function AdminApp() {
     if (!upload.drafts?.length) return setNotice("没有可发布的课程");
     if (!window.confirm(`确认发布“${upload.filename}”中的 ${upload.drafts.length} 节课程？学生端将更新为这个版本。`)) return;
     setBusy(true); setNotice("");
-    try { const data = await api("/api/admin/publish", { method: "POST", body: JSON.stringify({ upload_id: upload.id }) }); await loadUploads(); setNotice(`发布成功，当前版本 ${data.version.label}`); }
+    try { const data = await api("/api/admin/publish", { method: "POST", body: JSON.stringify({ upload_id: upload.id }) }); await loadAdminData(); setSection("published"); setNotice(`发布成功，当前版本 ${data.version.label}`); }
     catch (error) { setNotice(error.message); }
+    finally { setBusy(false); }
+  };
+
+  const savePublishedCourse = async (course) => {
+    setBusy(true); setNotice("");
+    try {
+      const data = await api(`/api/admin/courses/${encodeURIComponent(course.id)}`, { method: "PATCH", body: JSON.stringify({ course }) });
+      await loadCourses();
+      setNotice(`调课信息已保存，当前版本 ${data.version.label}`);
+    } catch (error) { setNotice(error.message); throw error; }
+    finally { setBusy(false); }
+  };
+
+  const deletePublishedCourse = async (course) => {
+    if (!window.confirm(`确定从当前课表删除“${course.course_name}”吗？学生端会立即更新。`)) return;
+    setBusy(true); setNotice("");
+    try {
+      const data = await api(`/api/admin/courses/${encodeURIComponent(course.id)}`, { method: "DELETE" });
+      await loadCourses();
+      setNotice(`课程已删除，当前版本 ${data.version.label}`);
+    } catch (error) { setNotice(error.message); }
     finally { setBusy(false); }
   };
 
@@ -94,19 +126,43 @@ export default function AdminApp() {
   return <div className="admin-shell">
     <header className="admin-topbar"><a href="/"><ArrowLeft size={18}/>返回学生端</a><div><ShieldCheck/><span><strong>厦国会税务专硕助手</strong><small>管理员控制台 · 腾讯云 EdgeOne</small></span></div><button onClick={logout}><LogOut size={17}/>退出登录</button></header>
     <main className="admin-main">
-      <section className="admin-heading"><div><em>COURSE PUBLISHING</em><h1>课程发布中心</h1><p>上传 PDF 后先审核，确认发布才会更新学生端。</p></div><label className={`upload-button ${busy ? "disabled" : ""}`}><UploadCloud/>上传课程 PDF<input ref={fileRef} type="file" accept="application/pdf,.pdf" disabled={busy} onChange={uploadPdf}/></label></section>
+      <section className="admin-heading"><div><em>COURSE MANAGEMENT</em><h1>课程管理中心</h1><p>查看并调整现有课程，或上传新 PDF 审核发布。</p></div>{section === "uploads" && <label className={`upload-button ${busy ? "disabled" : ""}`}><UploadCloud/>上传课程 PDF<input ref={fileRef} type="file" accept="application/pdf,.pdf" disabled={busy} onChange={uploadPdf}/></label>}</section>
+      <nav className="admin-tabs"><button className={section === "published" ? "active" : ""} onClick={() => setSection("published")}><CalendarDays/>现有课程 <span>{courses.length}</span></button><button className={section === "uploads" ? "active" : ""} onClick={() => setSection("uploads")}><UploadCloud/>PDF 上传与审核 <span>{uploads.length}</span></button></nav>
       {busy && progress > 0 && <div className="parse-progress"><span style={{ width: `${progress}%` }}/><b>{progress}%</b><small>正在本机解析 PDF，文件不会公开</small></div>}
       {notice && <div className="admin-notice">{notice}<button onClick={() => setNotice("")}><X size={16}/></button></div>}
-      <div className="admin-workspace">
+      {section === "published" ? <PublishedCourses courses={courses} version={version} busy={busy} onSave={savePublishedCourse} onDelete={deletePublishedCourse}/> : <div className="admin-workspace">
         <aside className="upload-list"><div className="upload-list-title"><h2>上传记录</h2><span>{uploads.length}</span></div>{uploads.length ? uploads.map((item) => <button key={item.id} className={activeId === item.id ? "active" : ""} onClick={() => setActiveId(item.id)}><FileText/><span><strong>{item.filename}</strong><small>{new Date(item.uploaded_at).toLocaleString("zh-CN")}</small></span><em className={item.status}>{item.status === "published" ? "已发布" : "待审核"}</em></button>) : <div className="upload-empty"><FileText/><p>还没有上传记录</p><small>请点击右上角上传课程 PDF</small></div>}</aside>
         <section className="review-panel">{active ? <><div className="review-head"><div><span className={`status ${active.status}`}>{active.status === "published" ? <CheckCircle2/> : <Pencil/>}{active.status === "published" ? "已发布版本" : "待审核"}</span><h2>{active.filename}</h2><p>共识别 {active.drafts?.length || 0} 节课程{active.warnings?.length ? ` · ${active.warnings.length} 条提示` : ""}</p></div><div><button className="danger" disabled={busy} onClick={() => deleteUpload(active.id)}><Trash2/>删除文件记录</button><button className="publish" disabled={busy || !active.drafts?.length} onClick={() => publish(active)}><CheckCircle2/>确认发布</button></div></div>{active.warnings?.length > 0 && <div className="parse-warnings">{active.warnings.map((warning, index) => <p key={index}>• {warning}</p>)}</div>}<CourseReview upload={active} onSave={saveDraft} onDelete={deleteDraft}/></> : <div className="review-empty"><UploadCloud/><h2>上传课程总表</h2><p>系统会自动识别日期、时段、课程、教师、班级、教室和备注。</p></div>}</section>
-      </div>
+      </div>}
     </main>
   </div>;
 }
 
 function Login({ busy, notice, onSubmit }) {
   return <div className="admin-login"><a href="/"><ArrowLeft/>返回学生端</a><form onSubmit={onSubmit}><div className="login-mark"><ShieldCheck/></div><em>ADMIN CONSOLE</em><h1>管理员登录</h1><p>只有管理员可以上传、审核和发布课程 PDF。</p><label>管理员账号<input name="username" autoComplete="username" required placeholder="请输入账号"/></label><label>登录密码<input name="password" type="password" autoComplete="current-password" required placeholder="请输入密码"/></label>{notice && <div className="login-error">{notice}</div>}<button disabled={busy}>{busy ? "正在登录…" : "登录管理员后台"}</button><small>由腾讯云 EdgeOne 同域安全服务验证</small></form></div>;
+}
+
+function PublishedCourses({ courses, version, busy, onSave, onDelete }) {
+  const [editing, setEditing] = useState(null);
+  const [query, setQuery] = useState("");
+  const fields = [["date", "日期"], ["weekday", "星期"], ["period", "时段"], ["start_time", "开始"], ["end_time", "结束"], ["course_name", "课程名称"], ["teacher", "教师"], ["class_name", "班级"], ["classroom", "教室"], ["remark", "备注"], ["course_type", "类型"]];
+  const keyword = query.trim().toLowerCase();
+  const visible = courses.filter((course) => !keyword || [course.course_name, course.teacher, course.date, course.classroom, course.remark].some((value) => String(value || "").toLowerCase().includes(keyword)));
+  const submit = async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const course = { ...editing };
+    fields.forEach(([key]) => { course[key] = String(form.get(key) || "").trim(); });
+    course.time = course.period;
+    await onSave(course);
+    setEditing(null);
+  };
+
+  return <section className="published-panel">
+    <div className="published-head"><div><span className="status published"><CheckCircle2/>学生端当前课表</span><h2>现有课程</h2><p>版本 {version?.label || "—"}{version?.updated_at ? ` · 更新于 ${new Date(version.updated_at).toLocaleString("zh-CN")}` : ""}</p></div><label>搜索课程<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="课程、教师、日期或教室"/></label></div>
+    {visible.length ? <div className="course-review-list published-list">{visible.map((course, index) => <article key={course.id}><i className={`type-${course.course_type}`}/><div><small>{course.date} · {course.weekday} · {course.period} {course.start_time}–{course.end_time}</small><h3>{course.course_name}</h3><p>{course.teacher || "教师未填写"}{course.classroom ? ` · ${course.classroom}` : ""}{course.remark ? ` · ${course.remark}` : ""}</p></div><span>#{index + 1}</span><button disabled={busy} onClick={() => setEditing(course)}><Pencil/>调课/编辑</button><button disabled={busy} className="icon-danger" onClick={() => onDelete(course)}><Trash2/>删除</button></article>)}</div> : <div className="published-empty"><CalendarDays/><h3>{courses.length ? "没有符合条件的课程" : "当前还没有已发布课程"}</h3><p>{courses.length ? "请更换搜索关键词" : "请进入“PDF 上传与审核”发布课程"}</p></div>}
+    {editing && <div className="editor-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setEditing(null)}><form className="course-editor" onSubmit={submit}><button type="button" className="editor-close" onClick={() => setEditing(null)}><X/></button><em>PUBLISHED COURSE</em><h2>调整现有课程</h2><p className="editor-tip">保存后学生端会立即读取新的课程安排，并自动生成新版本。</p><div>{fields.map(([key, label]) => <label key={key} className={key === "course_name" || key === "remark" ? "wide" : ""}>{label}{key === "course_type" ? <select name={key} defaultValue={editing[key] || "other"}><option value="tax">税务课程</option><option value="english">英语课程</option><option value="digital">人工智能/数字经济</option><option value="other">其他</option></select> : <input name={key} defaultValue={editing[key] || ""} required={["date", "weekday", "period", "start_time", "end_time", "course_name"].includes(key)}/>}</label>)}</div><button className="save-course" disabled={busy}>{busy ? "正在保存…" : "保存并更新学生端"}</button></form></div>}
+  </section>;
 }
 
 function CourseReview({ upload, onSave, onDelete }) {
