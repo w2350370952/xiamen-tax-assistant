@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { BookOpenCheck, CalendarDays, CalendarRange, ChevronLeft, ChevronRight, Clock3, Database, GraduationCap, Home, MapPin, ShieldCheck, UserRound, X } from "lucide-react";
 import { initialCourses } from "./initialCourses";
-const ADMIN_URL = "https://xiamen-tax-assistant.w2350370952.chatgpt.site/admin";
+const ADMIN_URL = "https://xiamen-tax-assistant.w2350370952.chatgpt.site/admin?from=edgeone&auth=chatgpt-v4";
 
 const weekNames = ["星期一","星期二","星期三","星期四","星期五","星期六","星期日"];
 const palette = { tax:{label:"税务课程",color:"#2f6fed",soft:"#eaf1ff"}, english:{label:"英语课程",color:"#15966f",soft:"#e7f7f1"}, digital:{label:"数字与智能",color:"#7657d6",soft:"#f0ecff"}, other:{label:"其他课程",color:"#7b8798",soft:"#eef1f4"} };
