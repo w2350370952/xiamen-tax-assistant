@@ -55,6 +55,7 @@ a {
   border-radius: 14px;
   color: #fff;
   background: linear-gradient(145deg, #244e8b, #17335f);
+  font-size: 12px;
 }
 .brand span {
   display: flex;
@@ -984,6 +985,144 @@ header p {
   font-size: 13px;
   font-weight: 700;
 }
+.major-profile {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin-top: 16px;
+  padding: 22px;
+  border: 1px solid #d9e5f5;
+  border-radius: 19px;
+  color: #315f9f;
+  background: #edf4ff;
+}
+.major-profile span {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  color: var(--ink);
+}
+.major-profile small {
+  margin-top: 3px;
+  color: var(--muted);
+}
+.major-profile button {
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--blue);
+  background: #fff;
+  font-size: 12px;
+  font-weight: 750;
+}
+.major-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(10, 24, 47, 0.62);
+  backdrop-filter: blur(8px);
+}
+.major-picker {
+  position: relative;
+  width: min(620px, 100%);
+  max-height: 92vh;
+  overflow: auto;
+  padding: 34px;
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 0 30px 90px rgba(10, 24, 47, 0.38);
+}
+.major-picker > em {
+  color: var(--blue);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 850;
+  letter-spacing: 0.18em;
+}
+.major-picker > h2 {
+  margin: 7px 0;
+  color: var(--navy);
+  font-size: 29px;
+}
+.major-picker > p {
+  margin: 0 0 23px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.major-picker > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 11px;
+}
+.major-picker > div > button {
+  display: grid;
+  grid-template-columns: 52px 1fr 18px;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  color: #66758a;
+  background: #fff;
+  text-align: left;
+}
+.major-picker > div > button:hover,
+.major-picker > div > button.active {
+  border-color: #9ab9ed;
+  background: #edf4ff;
+}
+.major-picker > div > button > b {
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  color: #fff;
+  background: linear-gradient(145deg, #244e8b, #17335f);
+  font-size: 11px;
+}
+.major-picker > div > button > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.major-picker > div > button strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+.major-picker > div > button small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.major-picker > div > button > svg {
+  width: 17px;
+}
+.major-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  color: var(--muted);
+  background: #f0f3f7;
+}
+.major-close svg {
+  width: 17px;
+}
+.major-hint {
+  display: block;
+  margin-top: 18px;
+  color: #9aa5b4;
+  text-align: center;
+  font-size: 10px;
+}
 .bottom {
   display: none;
 }
@@ -1122,6 +1261,22 @@ header p {
   .day-view-toolbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .major-profile {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .major-profile button {
+    width: 100%;
+  }
+  .major-picker {
+    padding: 28px 18px 22px;
+  }
+  .major-picker > h2 {
+    font-size: 25px;
+  }
+  .major-picker > div {
+    grid-template-columns: 1fr;
   }
   .course {
     align-items: flex-start;
