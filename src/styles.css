@@ -139,7 +139,7 @@ header p {
 }
 .term-overview {
   overflow: hidden;
-  margin-bottom: 28px;
+  margin-bottom: 16px;
   padding: 23px 24px 0;
   border-radius: 22px;
   color: #fff;
@@ -252,6 +252,97 @@ header p {
 .term-next strong {
   opacity: 0.68;
   font-size: 12px;
+}
+.holiday-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  border: 1px solid #f3dfbc;
+  border-radius: 19px;
+  background: linear-gradient(120deg, #fffaf0, #fff 58%, #fff7ea);
+  box-shadow: 0 9px 26px rgba(114, 73, 26, 0.07);
+}
+.holiday-icon {
+  display: grid;
+  place-items: center;
+  width: 50px;
+  height: 50px;
+  border-radius: 15px;
+  background: linear-gradient(145deg, #fff0c9, #ffe2ac);
+  font-size: 24px;
+}
+.holiday-info {
+  min-width: 0;
+}
+.holiday-info > small {
+  color: #af762d;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.holiday-info h2 {
+  margin: 3px 0 4px;
+  color: #47341d;
+  font-size: 21px;
+}
+.holiday-info p {
+  overflow: hidden;
+  margin: 0;
+  color: #806d55;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.holiday-info a,
+.holiday-empty > a {
+  display: inline-block;
+  margin-top: 6px;
+  color: #a36b24;
+  font-size: 11px;
+  text-decoration: none;
+}
+.holiday-info a:hover,
+.holiday-empty > a:hover {
+  text-decoration: underline;
+}
+.holiday-countdown {
+  min-width: 92px;
+  padding-left: 18px;
+  border-left: 1px solid #f0dfc5;
+  text-align: center;
+}
+.holiday-countdown small {
+  display: block;
+  margin-bottom: 2px;
+  color: #9e886b;
+  font-size: 12px;
+}
+.holiday-countdown strong {
+  color: #d27b24;
+  font-size: 29px;
+  line-height: 1;
+}
+.holiday-countdown strong em {
+  margin-left: 3px;
+  font-size: 12px;
+  font-style: normal;
+}
+.holiday-countdown.active strong {
+  font-size: 15px;
+}
+.holiday-empty {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+.holiday-empty .holiday-info p {
+  white-space: normal;
+}
+.holiday-empty > a {
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: 9px;
+  background: #fff2d9;
 }
 .panel {
   margin-top: 18px;
@@ -1349,6 +1440,43 @@ header p {
     margin-right: -16px;
     margin-left: -16px;
     padding: 13px 16px;
+  }
+  .holiday-card {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 12px;
+    padding: 16px;
+  }
+  .holiday-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 13px;
+    font-size: 21px;
+  }
+  .holiday-info h2 {
+    font-size: 19px;
+  }
+  .holiday-info p {
+    white-space: normal;
+  }
+  .holiday-countdown {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    min-width: 0;
+    padding: 11px 2px 0;
+    border-top: 1px solid #f0dfc5;
+    border-left: 0;
+  }
+  .holiday-countdown small {
+    margin: 0;
+  }
+  .holiday-countdown strong {
+    font-size: 24px;
+  }
+  .holiday-empty > a {
+    grid-column: 1 / -1;
+    text-align: center;
   }
   .search-results-popover {
     right: auto;
