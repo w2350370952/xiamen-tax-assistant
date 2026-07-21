@@ -2,9 +2,16 @@ import { useEffect, useState } from "react";
 import { BookOpenCheck, CalendarDays, CalendarRange, ChevronLeft, ChevronRight, Clock3, Database, GraduationCap, Home, MapPin, Search, ShieldCheck, UserRound, X } from "lucide-react";
 import { initialCourses } from "./initialCourses";
 import AdminApp from "./AdminApp";
+// Student UI revision: inline search and selected-date daily schedule.
 const ADMIN_URL = "/?admin=1";
 
 const weekNames = ["星期一","星期二","星期三","星期四","星期五","星期六","星期日"];
+const majors = [
+  {id:"tax",label:"税务",short:"MT",desc:"税务专硕课程安排"},
+  {id:"accounting",label:"会计",short:"MPAcc",desc:"会计专硕课程安排"},
+  {id:"audit",label:"审计",short:"MAud",desc:"审计专硕课程安排"},
+  {id:"finance",label:"金融",short:"MF",desc:"金融专硕课程安排"},
+];
 const palette = { tax:{label:"税务课程",color:"#2f6fed",soft:"#eaf1ff"}, english:{label:"英语课程",color:"#15966f",soft:"#e7f7f1"}, digital:{label:"数字与智能",color:"#7657d6",soft:"#f0ecff"}, other:{label:"其他课程",color:"#7b8798",soft:"#eef1f4"} };
 const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 const dateOf = s => new Date(`${s}T12:00:00`);
@@ -12,6 +19,8 @@ const addDays = (d,n) => { const x=new Date(d); x.setDate(x.getDate()+n); return
 const monday = d => addDays(d,1-(d.getDay()||7));
 const firstMonth = d => new Date(d.getFullYear(),d.getMonth(),1,12);
 const addMonths = (d,n) => new Date(d.getFullYear(),d.getMonth()+n,1,12);
+const storedMajor = () => { try { const value=localStorage.getItem("xnai_major"); if(majors.some(item=>item.id===value))return value; } catch {} const match=document.cookie.split(";").map(item=>item.trim()).find(item=>item.startsWith("xnai_major=")); const value=match?decodeURIComponent(match.slice(11)):null; return majors.some(item=>item.id===value)?value:null; };
+const rememberMajor = value => { try { localStorage.setItem("xnai_major",value); } catch {} document.cookie=`xnai_major=${encodeURIComponent(value)}; Path=/; Max-Age=31536000; SameSite=Lax; Secure`; };
 
 export default function App(){
   const adminMode = new URLSearchParams(window.location.search).has("admin");
@@ -19,8 +28,11 @@ export default function App(){
 }
 
 function StudentApp(){
+  const remembered=storedMajor();
+  const [major,setMajor]=useState(remembered);
+  const [showMajorPicker,setShowMajorPicker]=useState(!remembered);
   const [tab,setTab]=useState("today");
-  const [courses,setCourses]=useState(initialCourses);
+  const [courses,setCourses]=useState(remembered==="tax"?initialCourses:[]);
   const [version,setVersion]=useState({label:"v1.0",updated_at:"2026-07-20T15:00:00Z"});
   const [selected,setSelected]=useState(null);
   const [now,setNow]=useState(new Date());
@@ -33,9 +45,10 @@ function StudentApp(){
   const [searchQuery,setSearchQuery]=useState("");
   const [dayViewDate,setDayViewDate]=useState(null);
 
+  useEffect(()=>{const clock=setInterval(()=>setNow(new Date()),1000);return()=>clearInterval(clock);},[]);
   useEffect(()=>{
-    const clock=setInterval(()=>setNow(new Date()),1000);
-    const syncCourses=()=>fetch(`/api/live-courses?refresh=${Date.now()}`,{cache:"no-store"}).then(r=>r.ok?r.json():Promise.reject()).then(d=>{
+    if(!major)return undefined;
+    const syncCourses=()=>fetch(`/api/live-courses/${encodeURIComponent(major)}?refresh=${Date.now()}`,{cache:"no-store"}).then(r=>r.ok?r.json():Promise.reject()).then(d=>{
       if(Array.isArray(d.courses))setCourses(d.courses);
       if(d.version)setVersion(d.version);
       setSynced(true);
@@ -45,8 +58,8 @@ function StudentApp(){
     const courseTimer=setInterval(syncCourses,30000);
     document.addEventListener("visibilitychange",onVisible);
     window.addEventListener("focus",syncCourses);
-    return()=>{clearInterval(clock);clearInterval(courseTimer);document.removeEventListener("visibilitychange",onVisible);window.removeEventListener("focus",syncCourses);};
-  },[]);
+    return()=>{clearInterval(courseTimer);document.removeEventListener("visibilitychange",onVisible);window.removeEventListener("focus",syncCourses);};
+  },[major]);
   const today=iso(now), todayCourses=courses.filter(c=>c.date===today);
   const next=courses.find(c=>`${c.date}T${c.start_time}`>`${today}T${now.toTimeString().slice(0,5)}`);
   const weekStart=monday(weekAnchor), weekDays=Array.from({length:7},(_,i)=>addDays(weekStart,i));
@@ -54,17 +67,20 @@ function StudentApp(){
   const nav=[{id:"today",label:"今日",icon:Home},{id:"week",label:"周课表",icon:CalendarDays},{id:"month",label:"月视图",icon:CalendarRange},{id:"profile",label:"我的",icon:UserRound}];
   const keyword=searchQuery.trim().toLowerCase();
   const searchResults=keyword?courses.filter(c=>[c.course_name,c.teacher,c.date,c.weekday,c.classroom,c.class_name,c.remark,c.start_time,c.end_time].some(value=>String(value||"").toLowerCase().includes(keyword))):[];
+  const majorInfo=majors.find(item=>item.id===major)||majors[0];
+  const chooseMajor=id=>{rememberMajor(id);setMajor(id);setCourses(id==="tax"?initialCourses:[]);setVersion({label:"v1.0",updated_at:null});setSynced(false);setTab("today");setDayViewDate(null);setSearchQuery("");setShowMajorPicker(false);};
 
   return <div className="shell">
-    <aside className="sidebar"><button className="brand" onClick={()=>{setTab("today");setDayViewDate(null)}}><b>MT</b><span><strong>厦国会</strong><small>税务专硕助手</small></span></button><nav>{nav.map(n=><button key={n.id} className={tab===n.id?"active":""} onClick={()=>{setTab(n.id);setDayViewDate(null)}}><n.icon size={19}/>{n.label}</button>)}</nav><a className="admin" href={ADMIN_URL} target="_blank" rel="noreferrer"><ShieldCheck size={17}/>管理员入口</a></aside>
+    <aside className="sidebar"><button className="brand" onClick={()=>{setTab("today");setDayViewDate(null)}}><b>{majorInfo.short}</b><span><strong>厦国会</strong><small>{majorInfo.label}专硕助手</small></span></button><nav>{nav.map(n=><button key={n.id} className={tab===n.id?"active":""} onClick={()=>{setTab(n.id);setDayViewDate(null)}}><n.icon size={19}/>{n.label}</button>)}</nav><a className="admin" href={ADMIN_URL} target="_blank" rel="noreferrer"><ShieldCheck size={17}/>管理员入口</a></aside>
     <main>
       {tab==="today"&&<section className="page"><Header eyebrow="TODAY'S FOCUS" title={`${["星期日","星期一","星期二","星期三","星期四","星期五","星期六"][now.getDay()]}，专注当下。`} sub={`${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日 · 厦门国家会计学院`} actions={<CourseSearch query={searchQuery} setQuery={setSearchQuery} results={searchResults} select={setSelected}/>}/>{next&&<div className="next"><Clock3/><span><small>下一节课程 · {next.course_name}</small><strong>{next.date} {next.weekday} · {next.start_time}</strong></span></div>}<Panel title="今日课程" count={todayCourses.length}>{todayCourses.length?<div className="course-list">{todayCourses.map(c=><CourseCard key={c.id} c={c} onClick={()=>setSelected(c)}/>)}</div>:<Empty first={courses[0]?.date} onGo={()=>setTab("week")}/>}</Panel></section>}
       {tab==="week"&&<section className="page"><Header eyebrow="WEEKLY SCHEDULE" title="周课表" sub={dayViewDate?`${dayViewDate} · ${["星期日","星期一","星期二","星期三","星期四","星期五","星期六"][dateOf(dayViewDate).getDay()]}`:`${weekDays[0].getMonth()+1}月${weekDays[0].getDate()}日 – ${weekDays[6].getMonth()+1}月${weekDays[6].getDate()}日`} actions={<Pager selectedDate={dayViewDate} anchor={dayViewDate?dateOf(dayViewDate):weekAnchor} courses={courses} prev={()=>dayViewDate?setDayViewDate(iso(addDays(dateOf(dayViewDate),-1))):setWeekAnchor(addDays(weekAnchor,-7))} next={()=>dayViewDate?setDayViewDate(iso(addDays(dateOf(dayViewDate),1))):setWeekAnchor(addDays(weekAnchor,7))} onSelectDate={date=>{setWeekAnchor(date);setDayViewDate(iso(date));}}/>}/>{dayViewDate?<DaySchedule date={dayViewDate} courses={courses} select={setSelected} onBack={()=>setDayViewDate(null)} backLabel="返回完整周课表"/>:<><div className="week-scroll"><div className="week-grid"><div className="corner">时段</div>{weekDays.map((d,i)=><div className={`day-head ${iso(d)===today?"today":""}`} key={iso(d)}><span>{weekNames[i]}</span><b>{d.getDate()}</b></div>)}{["上午","下午"].map(period=><WeekRow key={period} period={period} days={weekDays} courses={courses} select={setSelected}/>)}</div></div><MobileWeek days={weekDays} courses={courses} today={today} select={setSelected}/><Legend/></>}</section>}
       {tab==="month"&&<section className="page"><Header eyebrow="MONTHLY CALENDAR" title={dayViewDate?"单日课程":`${monthStart.getFullYear()}年${monthStart.getMonth()+1}月`} sub={dayViewDate?`${dayViewDate} · ${["星期日","星期一","星期二","星期三","星期四","星期五","星期六"][dateOf(dayViewDate).getDay()]}`:"按月查看全部课程安排"} actions={<Pager selectedDate={dayViewDate} anchor={dayViewDate?dateOf(dayViewDate):dateOf(selectedDay)} courses={courses} prev={()=>{if(dayViewDate){const d=addDays(dateOf(dayViewDate),-1);setDayViewDate(iso(d));setMonthAnchor(firstMonth(d));}else{const d=addMonths(monthAnchor,-1);setMonthAnchor(d);setSelectedDay(iso(d));}}} next={()=>{if(dayViewDate){const d=addDays(dateOf(dayViewDate),1);setDayViewDate(iso(d));setMonthAnchor(firstMonth(d));}else{const d=addMonths(monthAnchor,1);setMonthAnchor(d);setSelectedDay(iso(d));}}} onSelectDate={date=>{setMonthAnchor(firstMonth(date));setSelectedDay(iso(date));setDayViewDate(iso(date));}}/>}/>{dayViewDate?<DaySchedule date={dayViewDate} courses={courses} select={setSelected} onBack={()=>setDayViewDate(null)} backLabel="返回完整月视图"/>:<><div className="month-calendar"><div className="weekdays">{weekNames.map(x=><span key={x}>{x.replace("星期","周")}</span>)}</div><div className="month-grid">{monthDays.map(d=>{const key=iso(d), dayCourses=courses.filter(c=>c.date===key);return <div key={key} className={`month-cell ${d.getMonth()!==monthStart.getMonth()?"outside":""} ${key===today?"today":""} ${key===selectedDay?"selected":""}`}><button className="date-btn" onClick={()=>setSelectedDay(key)}><b>{d.getDate()}</b>{dayCourses.length>0&&<small>{dayCourses.length}节</small>}</button><div className="month-courses">{dayCourses.map(c=>{const p=palette[c.course_type]||palette.other;return <button aria-label={c.course_name} title={c.course_name} key={c.id} style={{"--color":p.color,"--soft":p.soft}} onClick={()=>{setSelectedDay(key);setSelected(c)}}><i/><span>{c.course_name}</span></button>})}</div></div>})}</div></div><Panel title={`${selectedDay.replaceAll("-",".")} 课程`} count={courses.filter(c=>c.date===selectedDay).length}>{courses.some(c=>c.date===selectedDay)?<div className="course-list">{courses.filter(c=>c.date===selectedDay).map(c=><CourseCard key={c.id} c={c} onClick={()=>setSelected(c)}/>)}</div>:<div className="day-empty">当天暂无课程</div>}</Panel><Legend/></>}</section>}
-      {tab==="profile"&&<section className="page"><div className="hero"><GraduationCap size={34}/><div><small>2025级全日制 MT</small><h1>税务专硕课程空间</h1><p>把课程安排变成清晰、可靠的日常。</p></div></div><div className="stats"><Stat icon={<BookOpenCheck/>} label="当前课程" value={courses.length} note="条已发布安排"/><Stat icon={<Database/>} label="当前版本" value={version?.label||"v1.0"} note={synced?"已连接最新数据":"正在使用本地课程备份"}/><Stat icon={<Clock3/>} label="更新时间" value={(version?.updated_at||"").slice(0,10).replaceAll("-",".")||"—"} note="管理员审核后生效"/></div><div className="safe"><ShieldCheck/><span><strong>管理员专属发布</strong><small>只有管理员可以上传、审核和发布PDF。</small></span><a href={ADMIN_URL} target="_blank" rel="noreferrer">进入后台</a></div></section>}
+      {tab==="profile"&&<section className="page"><div className="hero"><GraduationCap size={34}/><div><small>2025级全日制 {majorInfo.short}</small><h1>{majorInfo.label}专硕课程空间</h1><p>把课程安排变成清晰、可靠的日常。</p></div></div><div className="stats"><Stat icon={<BookOpenCheck/>} label="当前课程" value={courses.length} note="条已发布安排"/><Stat icon={<Database/>} label="当前版本" value={version?.label||"v1.0"} note={synced?"已连接最新数据":"正在同步专业课程"}/><Stat icon={<Clock3/>} label="更新时间" value={(version?.updated_at||"").slice(0,10).replaceAll("-",".")||"—"} note="管理员审核后生效"/></div><div className="major-profile"><GraduationCap/><span><strong>当前专业：{majorInfo.label}</strong><small>系统会在微信浏览器中记住本次选择。</small></span><button onClick={()=>setShowMajorPicker(true)}>切换专业</button></div><div className="safe"><ShieldCheck/><span><strong>管理员专属发布</strong><small>只有管理员可以上传、审核和发布PDF。</small></span><a href={ADMIN_URL} target="_blank" rel="noreferrer">进入后台</a></div></section>}
     </main>
     <nav className="bottom">{nav.map(n=><button key={n.id} className={tab===n.id?"active":""} onClick={()=>{setTab(n.id);setDayViewDate(null)}}><n.icon size={20}/><span>{n.label}</span></button>)}</nav>
     {selected&&<Modal c={selected} close={()=>setSelected(null)}/>} 
+    {showMajorPicker&&<MajorPicker current={major} choose={chooseMajor} close={major?()=>setShowMajorPicker(false):null}/>} 
   </div>;
 }
 
@@ -79,4 +95,5 @@ function WeekRow({period,days,courses,select}){return <><div className="period">
 function MobileWeek({days,courses,today,select}){return <div className="mobile-week">{days.map((d,index)=>{const date=iso(d), dayCourses=courses.filter(c=>c.date===date);return <article className={date===today?"today":""} key={date}><div className="mobile-day-head"><span><b>{weekNames[index]}</b><small>{d.getMonth()+1}月{d.getDate()}日</small></span><em>{dayCourses.length} 节</em></div>{dayCourses.length?<div className="mobile-day-courses">{dayCourses.map(c=>{const p=palette[c.course_type]||palette.other;return <button key={c.id} style={{"--color":p.color,"--soft":p.soft}} onClick={()=>select(c)}><i/><span><strong>{c.course_name}</strong><small>{c.period} {c.start_time}–{c.end_time} · {c.teacher||"教师待定"}</small></span></button>})}</div>:<p className="mobile-no-course">暂无课程</p>}</article>})}</div>}
 function Legend(){return <div className="legend">{Object.values(palette).map(p=><span key={p.label}><i style={{background:p.color}}/>{p.label}</span>)}</div>}
 function Stat({icon,label,value,note}){return <article><span>{icon}</span><small>{label}</small><strong>{value}</strong><em>{note}</em></article>}
+function MajorPicker({current,choose,close}){return <div className="major-backdrop"><section className="major-picker">{close&&<button className="major-close" onClick={close}><X/></button>}<em>SELECT YOUR PROGRAM</em><h2>选择你的专业</h2><p>首次选择后系统会自动记住，下次从微信打开无需重复选择。</p><div>{majors.map(item=><button key={item.id} className={current===item.id?"active":""} onClick={()=>choose(item.id)}><b>{item.short}</b><span><strong>{item.label}专业</strong><small>{item.desc}</small></span><ChevronRight/></button>)}</div><small className="major-hint">可在“我的”页面随时切换专业</small></section></div>}
 function Modal({c,close}){const p=palette[c.course_type]||palette.other;return <div className="backdrop" onMouseDown={e=>e.target===e.currentTarget&&close()}><div className="modal"><button className="close" onClick={close}><X/></button><small style={{color:p.color}}>{p.label}</small><h2>{c.course_name}</h2><dl><div><dt>日期</dt><dd>{c.date} · {c.weekday}</dd></div><div><dt>时间</dt><dd>{c.start_time}–{c.end_time}</dd></div><div><dt>教师</dt><dd>{c.teacher||"未填写"}</dd></div><div><dt>班级</dt><dd>{c.class_name||"未填写"}</dd></div><div><dt>教室</dt><dd>{c.classroom||"未填写"}</dd></div><div><dt>备注</dt><dd>{c.remark||"无"}</dd></div></dl></div></div>}
