@@ -19,6 +19,8 @@ const MENU_CATEGORY_SOURCES = {
   lunch: { 热菜: ["热菜"], 免费汤: ["免费汤", "快汤"], 炖汤: ["炖汤", "炖罐汤"], 主食: ["主食"], 面档: ["面档"], 饮品: ["饮品", "佐品"], 煎扒档: ["煎扒档"], 饮料: ["饮料", "水果/饮料", "水果"] },
   dinner: { 热菜: ["热菜"], 免费汤: ["免费汤", "快汤", "炖罐汤", "炖汤"], 主食: ["主食"], 面档: ["面档"], 煎扒档: ["煎扒档"] },
 };
+const DINNER_SHARED_CATEGORIES = new Set(["热菜", "免费汤", "主食", "面档", "煎扒档"]);
+const dictionaryMeal = (meal, category) => meal === "dinner" && DINNER_SHARED_CATEGORIES.has(category) ? "lunch" : meal;
 
 const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), {
   status,
@@ -273,21 +275,25 @@ function normalizedDishName(value) {
 }
 
 function sanitizeDishDictionary(raw, currentMenu = null) {
-  const entries = Array.isArray(raw) ? raw.slice(0, 1200).map((entry) => ({
-    name: text(entry?.name, 100),
-    meal: ["breakfast", "lunch", "dinner"].includes(entry?.meal) ? entry.meal : "lunch",
-    category: text(entry?.category, 30),
-    aliases: Array.isArray(entry?.aliases) ? [...new Set(entry.aliases.slice(0, 30).map((item) => text(item, 100)).filter(Boolean))] : [],
-    uses: Math.max(1, Number(entry?.uses) || 1),
-    updated_at: text(entry?.updated_at, 30) || null,
-  })).filter((entry) => entry.name && MENU_MEALS[entry.meal]?.includes(entry.category)) : [];
+  const entries = [];
+  for (const source of Array.isArray(raw) ? raw.slice(0, 1200) : []) {
+    const sourceMeal = ["breakfast", "lunch", "dinner"].includes(source?.meal) ? source.meal : "lunch";
+    const category = text(source?.category, 30);
+    if (!MENU_MEALS[sourceMeal]?.includes(category)) continue;
+    const entry = { name: text(source?.name, 100), meal: dictionaryMeal(sourceMeal, category), category, aliases: Array.isArray(source?.aliases) ? [...new Set(source.aliases.slice(0, 30).map((item) => text(item, 100)).filter(Boolean))] : [], uses: Math.max(1, Number(source?.uses) || 1), updated_at: text(source?.updated_at, 30) || null };
+    if (!entry.name) continue;
+    const existing = entries.find((item) => item.meal === entry.meal && item.category === entry.category && normalizedDishName(item.name) === normalizedDishName(entry.name));
+    if (existing) { existing.uses = Math.min(9999, existing.uses + entry.uses); existing.aliases = [...new Set([...existing.aliases, ...entry.aliases])].slice(0, 30); if ((entry.updated_at || "") > (existing.updated_at || "")) existing.updated_at = entry.updated_at; }
+    else entries.push(entry);
+  }
   if (currentMenu) ensureMenuDishes(entries, sanitizeMenu(currentMenu), false);
   return entries.slice(0, 1200);
 }
 
 function dictionaryEntry(dictionary, name, meal, category) {
   const normalized = normalizedDishName(name);
-  return dictionary.find((entry) => entry.meal === meal && entry.category === category && normalizedDishName(entry.name) === normalized);
+  const storedMeal = dictionaryMeal(meal, category);
+  return dictionary.find((entry) => entry.meal === storedMeal && entry.category === category && normalizedDishName(entry.name) === normalized);
 }
 
 function ensureMenuDishes(dictionary, menu, increaseUses = true) {
@@ -295,7 +301,7 @@ function ensureMenuDishes(dictionary, menu, increaseUses = true) {
     const name = text(rawName, 100); if (!name || /无法识别|看不清|未识别/.test(name)) continue;
     const existing = dictionaryEntry(dictionary, name, meal, category);
     if (existing) { if (increaseUses) existing.uses = Math.min(9999, existing.uses + 1); existing.updated_at = new Date().toISOString(); }
-    else dictionary.push({ name, meal, category, aliases: [], uses: 1, updated_at: new Date().toISOString() });
+    else dictionary.push({ name, meal: dictionaryMeal(meal, category), category, aliases: [], uses: 1, updated_at: new Date().toISOString() });
   }
   dictionary.sort((a, b) => b.uses - a.uses || a.name.localeCompare(b.name, "zh-CN"));
   if (dictionary.length > 1200) dictionary.length = 1200;
@@ -322,7 +328,8 @@ function applyKnownDishAliases(menu, dictionary) {
   for (const day of corrected.days) for (const [meal, categories] of Object.entries(day.meals)) for (const [category, items] of Object.entries(categories)) {
     categories[category] = items.map((item) => {
       const normalized = normalizedDishName(item);
-      const match = dictionary.find((entry) => entry.meal === meal && entry.category === category && (normalizedDishName(entry.name) === normalized || entry.aliases.some((alias) => normalizedDishName(alias) === normalized)));
+      const storedMeal = dictionaryMeal(meal, category);
+      const match = dictionary.find((entry) => entry.meal === storedMeal && entry.category === category && (normalizedDishName(entry.name) === normalized || entry.aliases.some((alias) => normalizedDishName(alias) === normalized)));
       if (match && match.name !== item) { corrections += 1; return match.name; }
       return item;
     });
@@ -390,11 +397,50 @@ async function adminRoutes(request, url, path) {
     if (/无法识别|看不清|未识别/.test(name)) return fail("无法确认的文字不能加入历史菜品库");
     const state = await readState();
     const existing = dictionaryEntry(state.menus.dictionary, name, meal, category);
-    if (!existing) state.menus.dictionary.push({ name, meal, category, aliases: [], uses: 1, updated_at: new Date().toISOString() });
+    if (!existing) state.menus.dictionary.push({ name, meal: dictionaryMeal(meal, category), category, aliases: [], uses: 1, updated_at: new Date().toISOString() });
     state.menus.dictionary.sort((a, b) => b.uses - a.uses || a.name.localeCompare(b.name, "zh-CN"));
     if (state.menus.dictionary.length > 1200) state.menus.dictionary.length = 1200;
     await writeState(state);
     return json({ added: !existing, dictionary: state.menus.dictionary });
+  }
+
+  if (path === "/api/admin/menu-dictionary" && request.method === "PATCH") {
+    const body = await bodyJson(request);
+    const originalName = text(body.original?.name, 100);
+    const originalMeal = ["breakfast", "lunch", "dinner"].includes(body.original?.meal) ? body.original.meal : "";
+    const originalCategory = text(body.original?.category, 30);
+    const name = text(body.entry?.name, 100);
+    const meal = ["breakfast", "lunch", "dinner"].includes(body.entry?.meal) ? body.entry.meal : "";
+    const category = text(body.entry?.category, 30);
+    if (!originalName || !originalMeal || !name || !meal || !MENU_MEALS[meal]?.includes(category)) return fail("菜品修改信息不完整");
+    const state = await readState();
+    const storedOriginalMeal = dictionaryMeal(originalMeal, originalCategory);
+    const storedMeal = dictionaryMeal(meal, category);
+    const index = state.menus.dictionary.findIndex((entry) => entry.meal === storedOriginalMeal && entry.category === originalCategory && normalizedDishName(entry.name) === normalizedDishName(originalName));
+    if (index < 0) return fail("未找到历史菜品", 404);
+    const duplicate = state.menus.dictionary.some((entry, entryIndex) => entryIndex !== index && entry.meal === storedMeal && entry.category === category && normalizedDishName(entry.name) === normalizedDishName(name));
+    if (duplicate) return fail("修改后的菜品已存在于相同餐次和分类");
+    const current = state.menus.dictionary[index];
+    const aliases = [...(current.aliases || [])];
+    if (normalizedDishName(current.name) !== normalizedDishName(name) && !aliases.some((alias) => normalizedDishName(alias) === normalizedDishName(current.name))) aliases.push(current.name);
+    state.menus.dictionary[index] = { ...current, name, meal: storedMeal, category, aliases: aliases.slice(0, 30), updated_at: new Date().toISOString() };
+    state.menus.dictionary.sort((a, b) => b.uses - a.uses || a.name.localeCompare(b.name, "zh-CN"));
+    await writeState(state);
+    return json({ entry: state.menus.dictionary.find((entry) => entry.meal === storedMeal && entry.category === category && normalizedDishName(entry.name) === normalizedDishName(name)), dictionary: state.menus.dictionary });
+  }
+
+  if (path === "/api/admin/menu-dictionary" && request.method === "DELETE") {
+    const body = await bodyJson(request);
+    const name = text(body.name, 100);
+    const meal = ["breakfast", "lunch", "dinner"].includes(body.meal) ? body.meal : "";
+    const category = text(body.category, 30);
+    const state = await readState();
+    const storedMeal = dictionaryMeal(meal, category);
+    const before = state.menus.dictionary.length;
+    state.menus.dictionary = state.menus.dictionary.filter((entry) => !(entry.meal === storedMeal && entry.category === category && normalizedDishName(entry.name) === normalizedDishName(name)));
+    if (state.menus.dictionary.length === before) return fail("未找到历史菜品", 404);
+    await writeState(state);
+    return json({ ok: true, dictionary: state.menus.dictionary });
   }
 
   if (path === "/api/admin/menu-ocr" && request.method === "POST") {
