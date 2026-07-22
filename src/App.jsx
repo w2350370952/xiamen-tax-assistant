@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { BookOpenCheck, CalendarDays, CalendarRange, ChevronLeft, ChevronRight, Clock3, Coffee, Database, GraduationCap, Home, MapPin, MoonStar, Search, ShieldCheck, Soup, UserRound, UtensilsCrossed, X } from "lucide-react";
 import { initialCourses } from "./initialCourses";
 import AdminApp from "./AdminApp";
-// Student UI revision: inline search and selected-date daily schedule.
+// Student UI: course calendar, Beijing-time dining menu and mobile navigation.
 const ADMIN_URL = "/?admin=1";
 
 const weekNames = ["星期一","星期二","星期三","星期四","星期五","星期六","星期日"];
