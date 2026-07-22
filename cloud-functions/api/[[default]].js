@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { getStore } from "@edgeone/pages-blob";
 
 const store = getStore("xiamen-tax-assistant");
@@ -21,6 +21,7 @@ const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(d
 
 const fail = (detail, status = 400) => json({ detail }, status);
 const sha256 = (value) => createHash("sha256").update(String(value)).digest("hex");
+const hmac = (key, value, encoding) => createHmac("sha256", key).update(value).digest(encoding);
 
 function safeEqualHex(left, right) {
   try {
@@ -87,6 +88,48 @@ async function bodyJson(request) {
   const length = Number(request.headers.get("content-length") || 0);
   if (length > 900_000) throw new Error("提交数据过大");
   return request.json();
+}
+
+async function recognizeMenuTable(imageBase64) {
+  const secretId = process.env.TENCENT_OCR_SECRET_ID || "";
+  const secretKey = process.env.TENCENT_OCR_SECRET_KEY || "";
+  if (!secretId || !secretKey) return { configured: false };
+  const host = "ocr.tencentcloudapi.com";
+  const service = "ocr";
+  const action = "RecognizeTableAccurateOCR";
+  const version = "2018-11-19";
+  const timestamp = Math.floor(Date.now() / 1000);
+  const date = new Date(timestamp * 1000).toISOString().slice(0, 10);
+  const payload = JSON.stringify({ ImageBase64: imageBase64, UseNewModel: true });
+  const canonicalHeaders = `content-type:application/json; charset=utf-8\nhost:${host}\nx-tc-action:${action.toLowerCase()}\n`;
+  const signedHeaders = "content-type;host;x-tc-action";
+  const canonicalRequest = `POST\n/\n\n${canonicalHeaders}\n${signedHeaders}\n${sha256(payload)}`;
+  const credentialScope = `${date}/${service}/tc3_request`;
+  const stringToSign = `TC3-HMAC-SHA256\n${timestamp}\n${credentialScope}\n${sha256(canonicalRequest)}`;
+  const secretDate = hmac(`TC3${secretKey}`, date);
+  const secretService = hmac(secretDate, service);
+  const secretSigning = hmac(secretService, "tc3_request");
+  const signature = hmac(secretSigning, stringToSign, "hex");
+  const authorization = `TC3-HMAC-SHA256 Credential=${secretId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+  const response = await fetch(`https://${host}`, {
+    method: "POST",
+    headers: {
+      Authorization: authorization,
+      "Content-Type": "application/json; charset=utf-8",
+      Host: host,
+      "X-TC-Action": action,
+      "X-TC-Timestamp": String(timestamp),
+      "X-TC-Version": version,
+      "X-TC-Region": "ap-guangzhou",
+    },
+    body: payload,
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || result.Response?.Error) {
+    const message = result.Response?.Error?.Message || `腾讯云 OCR 请求失败（HTTP ${response.status}）`;
+    throw new Error(message);
+  }
+  return { configured: true, table_detections: result.Response?.TableDetections || [], angle: result.Response?.Angle || 0, request_id: result.Response?.RequestId || "" };
 }
 
 const text = (value, max = 200) => String(value ?? "").trim().slice(0, max);
@@ -181,6 +224,14 @@ async function adminRoutes(request, url, path) {
   if (path === "/api/admin/menu" && request.method === "GET") {
     const state = await readState();
     return json({ menu: state.menus.current ? sanitizeMenu(state.menus.current) : null, version: state.menus.version });
+  }
+
+  if (path === "/api/admin/menu-ocr" && request.method === "POST") {
+    const body = await bodyJson(request);
+    const imageBase64 = String(body.image_base64 || "").replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, "");
+    if (!imageBase64 || imageBase64.length > 800_000) return fail("菜单图片为空或过大，请使用小于 600KB 的清晰 JPG 图片");
+    const result = await recognizeMenuTable(imageBase64);
+    return json(result);
   }
 
   if (path === "/api/admin/menu" && request.method === "PATCH") {
