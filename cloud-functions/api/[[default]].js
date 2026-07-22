@@ -3,6 +3,7 @@ import { getStore } from "@edgeone/pages-blob";
 
 const store = getStore("xiamen-tax-assistant");
 const STATE_KEY = "course-state.json";
+const ANALYTICS_KEY = "anonymous-analytics-v1.json";
 const COOKIE = "xnai_admin";
 const ADMIN_USER = "xnaitax2025";
 const ADMIN_PASSWORD_SHA256 = "3d4a6df67e692969e3092a220365c136d761097075b504bea76c0b2858a22bb5";
@@ -75,6 +76,90 @@ async function readState() {
 
 async function writeState(state) {
   await store.setJSON(STATE_KEY, state, { cacheControl: "no-store" });
+}
+
+function beijingDateHour(value = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).formatToParts(value);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return { date: `${map.year}-${map.month}-${map.day}`, hour: map.hour };
+}
+
+function analyticsDateOffset(date, offset) {
+  const value = new Date(`${date}T12:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + offset);
+  return value.toISOString().slice(0, 10);
+}
+
+function devicePlatform(request) {
+  const ua = request.headers.get("user-agent") || "";
+  if (/HarmonyOS|HUAWEI.*Harmony/i.test(ua)) return "HarmonyOS";
+  if (/iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && /Mobile/i.test(ua))) return "iOS";
+  if (/Android/i.test(ua)) return "Android";
+  if (/Windows/i.test(ua)) return "Windows";
+  if (/Macintosh|Mac OS X/i.test(ua)) return "macOS";
+  if (/Linux/i.test(ua)) return "Linux";
+  return "其他";
+}
+
+const uniquePush = (list, value) => { if (!list.includes(value)) list.push(value); };
+function normalizeAnalytics(raw) { return { days: raw?.days && typeof raw.days === "object" ? raw.days : {} }; }
+async function readAnalytics() { return normalizeAnalytics(await store.get(ANALYTICS_KEY, { type: "json", consistency: "strong" })); }
+async function writeAnalytics(data) { await store.setJSON(ANALYTICS_KEY, data, { cacheControl: "no-store" }); }
+
+async function recordAnonymousVisit(request) {
+  const ua = request.headers.get("user-agent") || "";
+  if (/bot|spider|crawler|headless|preview/i.test(ua)) return json({ ok: true, ignored: true }, 202);
+  const body = await bodyJson(request);
+  const clientId = text(body.visitor_id, 100);
+  if (!/^[a-zA-Z0-9_-]{8,100}$/.test(clientId)) return fail("匿名访客标识无效");
+  const visitor = sha256(`xnai-anonymous:${clientId}`).slice(0, 24);
+  const platform = devicePlatform(request);
+  const { date, hour } = beijingDateHour();
+  const analytics = await readAnalytics();
+  const day = analytics.days[date] ||= { views: 0, visitors: [], hours: {}, devices: {} };
+  day.views = Math.max(0, Number(day.views) || 0) + 1;
+  day.visitors = Array.isArray(day.visitors) ? day.visitors : [];
+  uniquePush(day.visitors, visitor);
+  const hourData = day.hours[hour] ||= { views: 0, visitors: [] };
+  hourData.views = Math.max(0, Number(hourData.views) || 0) + 1;
+  hourData.visitors = Array.isArray(hourData.visitors) ? hourData.visitors : [];
+  uniquePush(hourData.visitors, visitor);
+  const deviceData = day.devices[platform] ||= { views: 0, visitors: [] };
+  deviceData.views = Math.max(0, Number(deviceData.views) || 0) + 1;
+  deviceData.visitors = Array.isArray(deviceData.visitors) ? deviceData.visitors : [];
+  uniquePush(deviceData.visitors, visitor);
+  const keepFrom = analyticsDateOffset(date, -89);
+  for (const key of Object.keys(analytics.days)) if (key < keepFrom || key > date) delete analytics.days[key];
+  await writeAnalytics(analytics);
+  return json({ ok: true }, 202);
+}
+
+async function analyticsReport(url) {
+  const requested = Number(url.searchParams.get("days"));
+  const range = [7, 30, 90].includes(requested) ? requested : 7;
+  const today = beijingDateHour().date;
+  const analytics = await readAnalytics();
+  const rangeVisitors = new Set();
+  const deviceVisitors = {};
+  const days = Array.from({ length: range }, (_, index) => analyticsDateOffset(today, index - range + 1)).map((date) => {
+    const source = analytics.days[date] || {};
+    const visitors = Array.isArray(source.visitors) ? source.visitors : [];
+    visitors.forEach((visitor) => rangeVisitors.add(visitor));
+    const hours = Array.from({ length: 24 }, (_, hour) => {
+      const key = String(hour).padStart(2, "0"), item = source.hours?.[key] || {};
+      return { hour: key, views: Math.max(0, Number(item.views) || 0), visitors: Array.isArray(item.visitors) ? item.visitors.length : 0 };
+    });
+    const devices = Object.entries(source.devices || {}).map(([name, item]) => {
+      deviceVisitors[name] ||= new Set();
+      if (Array.isArray(item.visitors)) item.visitors.forEach((visitor) => deviceVisitors[name].add(visitor));
+      return { name, views: Math.max(0, Number(item.views) || 0), visitors: Array.isArray(item.visitors) ? item.visitors.length : 0 };
+    }).sort((a, b) => b.visitors - a.visitors || b.views - a.views);
+    return { date, views: Math.max(0, Number(source.views) || 0), visitors: visitors.length, hours, devices };
+  });
+  const totalViews = days.reduce((sum, day) => sum + day.views, 0);
+  const mobileVisitors = new Set([...(deviceVisitors.iOS || []), ...(deviceVisitors.Android || []), ...(deviceVisitors.HarmonyOS || [])]);
+  const todayData = days[days.length - 1];
+  return json({ range, generated_at: new Date().toISOString(), summary: { today_views: todayData.views, today_visitors: todayData.visitors, range_views: totalViews, range_visitors: rangeVisitors.size, mobile_visitors: mobileVisitors.size, mobile_share: rangeVisitors.size ? Math.round(mobileVisitors.size / rangeVisitors.size * 100) : 0 }, days });
 }
 
 async function requireAdmin(request) {
@@ -220,6 +305,7 @@ async function adminRoutes(request, url, path) {
   if (path === "/api/admin/logout" && request.method === "POST") return logout(request);
   if (!(await requireAdmin(request))) return fail("管理员登录已失效，请重新登录", 401);
   if (path === "/api/admin/session" && request.method === "GET") return json({ authenticated: true });
+  if (path === "/api/admin/analytics" && request.method === "GET") return analyticsReport(url);
 
   if (path === "/api/admin/courses" && request.method === "GET") {
     const state = await readState();
@@ -431,6 +517,7 @@ export async function onRequest({ request }) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
   try {
+    if (path === "/api/analytics/visit" && request.method === "POST") return await recordAnonymousVisit(request);
     if ((path === "/api/live-courses" || path.startsWith("/api/live-courses/") || path === "/api/courses") && request.method === "GET") {
       const state = await readState();
       const pathMajor = path.startsWith("/api/live-courses/") ? decodeURIComponent(path.slice("/api/live-courses/".length)) : null;
