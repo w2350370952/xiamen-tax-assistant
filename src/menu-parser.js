@@ -194,6 +194,83 @@ function matchedCategory(value, meal) {
   return entries.find(([, alias]) => text.includes(alias))?.[0] || null;
 }
 
+const TEXT_MEALS = [
+  { meal: "breakfast", names: ["早餐", "早饭", "早点"] },
+  { meal: "lunch", names: ["午餐", "午饭", "中餐"] },
+  { meal: "dinner", names: ["晚餐", "晚饭"] },
+];
+
+function splitTypedDishes(value) {
+  return String(value || "")
+    .split(/、|，|,|；|;|\t|\s{2,}/)
+    .map((item) => item.replace(/^\s*(?:[-•·]|(?:\d+|[①-⑳])[.、)）])\s*/, "").trim())
+    .filter(Boolean);
+}
+
+function consumeCategoryPrefix(value, meal) {
+  const candidates = Object.entries(CATEGORY_ALIASES[meal] || {})
+    .flatMap(([category, names]) => names.map((name) => ({ category, name })))
+    .sort((left, right) => right.name.length - left.name.length);
+  for (const candidate of candidates) {
+    if (value === candidate.name) return { category: candidate.category, rest: "" };
+    if (!value.startsWith(candidate.name)) continue;
+    const suffix = value.slice(candidate.name.length);
+    const separator = suffix.match(/^\s*(?:[:：\-—]\s*|\s+)/);
+    if (separator) return { category: candidate.category, rest: suffix.slice(separator[0].length) };
+  }
+  return null;
+}
+
+export function parseWeeklyMenuText(source) {
+  const patches = {};
+  const foundDays = new Set(), foundMeals = new Set(), foundCategories = new Set();
+  let dayIndex = null, meal = null, category = null, ignored = 0;
+  const addItems = (value) => {
+    if (dayIndex === null || !meal || !category) { if (String(value || "").trim()) ignored += 1; return; }
+    const key = `${dayIndex}:${meal}:${category}`;
+    patches[key] ||= [];
+    for (const item of splitTypedDishes(value)) if (!patches[key].includes(item)) patches[key].push(item);
+  };
+
+  for (const rawLine of String(source || "").split(/\r?\n/)) {
+    let rest = rawLine.replace(/[【】\[\]]/g, " ").trim();
+    if (!rest) continue;
+
+    const dayMatch = rest.match(/^(?:星期|周|礼拜)\s*([一二三四五六日天])\s*(?:[:：\-—]\s*)?/);
+    if (dayMatch) {
+      dayIndex = "一二三四五六日".indexOf(dayMatch[1] === "天" ? "日" : dayMatch[1]);
+      meal = null; category = null; foundDays.add(dayIndex); rest = rest.slice(dayMatch[0].length).trim();
+    }
+
+    const mealMatch = TEXT_MEALS.flatMap((entry) => entry.names.map((name) => ({ meal: entry.meal, name }))).sort((left, right) => right.name.length - left.name.length).find((entry) => rest === entry.name || rest.startsWith(entry.name));
+    if (mealMatch) {
+      meal = mealMatch.meal; category = null;
+      if (dayIndex !== null) foundMeals.add(`${dayIndex}:${meal}`);
+      rest = rest.slice(mealMatch.name.length).replace(/^\s*[:：\-—]?\s*/, "");
+    }
+
+    if (meal) {
+      const categoryMatch = consumeCategoryPrefix(rest, meal);
+      if (categoryMatch) {
+        category = categoryMatch.category;
+        if (dayIndex !== null) foundCategories.add(`${dayIndex}:${meal}:${category}`);
+        rest = categoryMatch.rest.trim();
+      }
+    }
+
+    addItems(rest);
+  }
+
+  return {
+    patches,
+    days: foundDays.size,
+    meals: foundMeals.size,
+    categories: foundCategories.size,
+    count: Object.values(patches).reduce((sum, items) => sum + items.length, 0),
+    ignored,
+  };
+}
+
 function tableTop(table) {
   return Math.min(...(table.TableCoordPoint || []).map((point) => Number(point.Y || 0)), Number.MAX_SAFE_INTEGER);
 }
