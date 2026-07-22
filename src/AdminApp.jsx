@@ -212,13 +212,28 @@ function MenuManager({ busy, setBusy, setProgress, setProgressLabel, setNotice }
     const file = event.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) { setNotice("请选择 JPG 或 PNG 菜单图片；iPhone 的 HEIC 图片请先存为照片或截图后上传"); return; }
-    setBusy(true); setProgress(1); setProgressLabel("正在本机识别菜单图片，首次使用需加载中文识别组件"); setNotice("正在自动旋转并识别表格小字，请保持页面打开…");
+    setBusy(true); setProgress(1); setProgressLabel("正在准备菜单图片"); setNotice("正在自动旋转并识别表格小字，请保持页面打开…");
     try {
-      const { parseMenuImage } = await import("./menu-parser.js");
-      const result = await parseMenuImage(file, weekStart, setProgress);
+      const parser = await import("./menu-parser.js");
+      let result = null;
+      let cloudMessage = "";
+      try {
+        setProgress(8); setProgressLabel("正在调用腾讯云表格识别 V3");
+        const imageBase64 = await parser.imageFileToBase64(file);
+        const cloud = await api("/api/admin/menu-ocr", { method: "POST", body: JSON.stringify({ image_base64: imageBase64 }) });
+        if (cloud.configured) {
+          setProgress(86);
+          result = parser.parseTencentMenuTables(cloud.table_detections, weekStart);
+        } else cloudMessage = "腾讯云 OCR 尚未配置，已自动改用本机基础识别。";
+      } catch (error) { cloudMessage = `腾讯云表格识别未成功（${error.message}），已自动改用本机基础识别。`; }
+      if (!result) {
+        setProgressLabel("正在使用本机中文 OCR 备用识别");
+        result = await parser.parseMenuImage(file, weekStart, setProgress);
+        result.warnings = [cloudMessage, ...(result.warnings || [])].filter(Boolean);
+      }
       const record = await api("/api/admin/menu-uploads", { method: "POST", body: JSON.stringify({ filename: file.name, menu: result.menu, warnings: result.warnings, recognized_lines: result.recognized_lines }) });
       await load(); setActiveId(record.upload.id); setMode("review");
-      setNotice(`菜单识别完成：提取到 ${result.recognized_lines} 行内容，请逐日校对后发布。`);
+      setNotice(`${result.engine === "tencent-table-v3" ? "腾讯云表格识别完成" : "本机初步识别完成"}：提取到 ${result.recognized_lines} 行内容，请逐日校对后发布。`);
     } catch (error) { setNotice(error.message); }
     finally { setBusy(false); setProgress(0); if (fileRef.current) fileRef.current.value = ""; }
   };
