@@ -1417,7 +1417,7 @@ header p {
   gap: 8px;
   position: relative;
 }
-.menu-date-nav > button {
+.menu-date-nav button {
   min-width: 46px;
   height: 46px;
   display: flex;
@@ -1430,50 +1430,13 @@ header p {
   color: #546a60;
   background: #fff;
 }
-.menu-date-nav > button:nth-child(2) {
+.menu-date-nav button:nth-child(2) {
   min-width: 98px;
   font-weight: 750;
 }
-.menu-date-nav > button svg {
+.menu-date-nav svg {
   width: 18px;
 }
-.menu-date-nav > button:disabled { opacity: .38; cursor: not-allowed; }
-.menu-date-current > span { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
-.menu-date-current small { color: #8a9b92; font-size: 9px; font-weight: 700; }
-.menu-date-current strong { color: #355047; font-size: 12px; }
-.menu-week-popover {
-  position: absolute;
-  z-index: 30;
-  top: calc(100% + 9px);
-  right: 0;
-  width: min(520px, calc(100vw - 32px));
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 6px;
-  box-sizing: border-box;
-  padding: 10px;
-  border: 1px solid #dbe6e0;
-  border-radius: 15px;
-  background: #fff;
-  box-shadow: 0 18px 45px rgba(28, 66, 49, .18);
-}
-.menu-week-popover button {
-  position: relative;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 10px 4px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  color: #718279;
-  background: #f7faf8;
-}
-.menu-week-popover button span { font-size: 10px; }
-.menu-week-popover button strong { color: #385246; font-size: 12px; }
-.menu-week-popover button.active { border-color: #75ad91; color: #1f7654; background: #eaf6ef; }
-.menu-week-popover button i { position: absolute; top: 6px; right: 7px; width: 5px; height: 5px; border-radius: 50%; background: #3d9a70; }
 .menu-week-select {
   position: relative;
   min-width: 205px;
@@ -1695,6 +1658,39 @@ header p {
   background: #fff;
   font-size: 13px;
 }
+.menu-category-list li.rated-menu-dish {
+  justify-content: space-between;
+  gap: 10px;
+}
+.rated-menu-dish > span {
+  min-width: 0;
+  flex: 1;
+  line-height: 1.35;
+}
+.rated-menu-dish > div {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+.rated-menu-dish button {
+  min-width: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 5px 6px;
+  border: 1px solid #e1e8e4;
+  border-radius: 8px;
+  color: #7d8d85;
+  background: #f8faf9;
+  font: inherit;
+  cursor: pointer;
+}
+.rated-menu-dish button svg { width: 13px; height: 13px; }
+.rated-menu-dish button b { font-size: 9px; font-weight: 750; }
+.rated-menu-dish button.like.active { border-color: #7bb79a; color: #14734d; background: #e7f6ee; }
+.rated-menu-dish button.dislike.active { border-color: #dda4a4; color: #a44848; background: #fff0f0; }
+.rated-menu-dish button:disabled { opacity: .5; cursor: wait; }
 .menu-sheet footer {
   padding: 13px 25px;
   color: #96a39d;
@@ -1740,10 +1736,9 @@ header p {
     width: 100%;
     align-self: stretch;
   }
-  .menu-date-nav > button:nth-child(2) {
+  .menu-date-nav button:nth-child(2) {
     flex: 1;
   }
-  .menu-week-popover { left: 0; right: auto; width: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .menu-week-select {
     width: 100%;
     min-width: 0;
@@ -1814,6 +1809,14 @@ header p {
     padding: 7px 9px;
     font-size: 12px;
   }
+  .menu-category-list li.rated-menu-dish {
+    min-height: 68px;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .rated-menu-dish > div { width: 100%; }
+  .rated-menu-dish button { flex: 1; min-width: 0; padding: 5px 3px; }
   .menu-category-list article strong { font-size: 17px; }
 }
 @media (max-width: 650px) {
