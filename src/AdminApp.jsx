@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, CalendarDays, CheckCircle2, FileImage, FileText, LogOut, Pencil, ShieldCheck, Soup, Trash2, UploadCloud, UtensilsCrossed, X } from "lucide-react";
+import { MENU_CATEGORIES, imageFileToBase64, parseMenuImage, parseTencentMenuTables, parseWeeklyMenuText } from "./menu-parser.js";
 
 const MAJORS = [
   { id: "tax", label: "税务" },
@@ -187,34 +188,11 @@ function CourseReview({ upload, onSave, onDelete }) {
 }
 
 const MENU_LABELS = { breakfast: "早餐", lunch: "午餐", dinner: "晚餐" };
-const MENU_CATEGORIES = {
-  breakfast: ["热菜", "中点", "主食", "西点", "饮料"],
-  lunch: ["热菜", "免费汤", "炖汤", "主食", "面档", "饮品", "煎扒档", "饮料"],
-  dinner: ["热菜", "免费汤", "主食", "面档", "煎扒档"],
-};
-const MENU_TEXT_ALIASES = {
-  breakfast: { 热菜: ["热菜", "小菜"], 中点: ["中点"], 主食: ["主食"], 西点: ["西点"], 饮料: ["饮料", "水果/饮料", "水果"] },
-  lunch: { 热菜: ["热菜"], 免费汤: ["免费汤", "快汤"], 炖汤: ["炖汤", "炖罐汤"], 主食: ["主食"], 面档: ["面档"], 饮品: ["饮品", "佐品"], 煎扒档: ["煎扒档"], 饮料: ["饮料", "水果/饮料", "水果"] },
-  dinner: { 热菜: ["热菜"], 免费汤: ["免费汤", "快汤", "炖汤", "炖罐汤"], 主食: ["主食"], 面档: ["面档"], 煎扒档: ["煎扒档"] },
-};
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const dateIso = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 function currentMonday() { const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date()); const map = Object.fromEntries(parts.map((part) => [part.type, part.value])); const date = new Date(`${map.year}-${map.month}-${map.day}T12:00:00`); date.setDate(date.getDate() - ((date.getDay() + 6) % 7)); return dateIso(date); }
 function blankMeals() { return Object.fromEntries(Object.entries(MENU_CATEGORIES).map(([meal, categories]) => [meal, Object.fromEntries(categories.map((category) => [category, []]))])); }
 function blankMenu(weekStart) { const monday = new Date(`${weekStart}T12:00:00`); const weekdays = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]; return { week_start: weekStart, days: weekdays.map((weekday, index) => { const date = new Date(monday); date.setDate(date.getDate() + index); return { date: dateIso(date), weekday, meals: blankMeals() }; }) }; }
-function parseQuickMenuText(source, meal) {
-  const result = Object.fromEntries(MENU_CATEGORIES[meal].map((category) => [category, []]));
-  const aliases = Object.entries(MENU_TEXT_ALIASES[meal]).flatMap(([category, names]) => names.map((name) => ({ category, name }))).sort((a, b) => b.name.length - a.name.length);
-  const found = new Set(); let current = null; let ignored = 0;
-  const addItems = (category, value) => String(value || "").split(/、|，|,|；|;|\t|\s{2,}/).map((item) => item.replace(/^\s*(?:[-•·]|(?:\d+|[①-⑳])[.、)）])\s*/, "").trim()).filter(Boolean).forEach((item) => { if (!result[category].includes(item)) result[category].push(item); });
-  for (const rawLine of String(source || "").split(/\r?\n/)) {
-    const line = rawLine.trim().replace(/^[【\[]|[】\]]$/g, ""); if (!line) continue;
-    const match = aliases.find(({ name }) => line === name || line.startsWith(`${name}：`) || line.startsWith(`${name}:`) || new RegExp(`^${name}\\s+`).test(line));
-    if (match) { current = match.category; found.add(current); addItems(current, line.slice(match.name.length).replace(/^\s*[:：]\s*/, "")); }
-    else if (current) addItems(current, line); else ignored += 1;
-  }
-  return { categories: result, found: [...found], ignored, count: Object.values(result).reduce((sum, items) => sum + items.length, 0) };
-}
 
 function MenuManager({ busy, setBusy, setProgress, setProgressLabel, setNotice }) {
   const [uploads, setUploads] = useState([]);
@@ -239,21 +217,20 @@ function MenuManager({ busy, setBusy, setProgress, setProgressLabel, setNotice }
     if (!file.type.startsWith("image/")) { setNotice("请选择 JPG 或 PNG 菜单图片；iPhone 的 HEIC 图片请先存为照片或截图后上传"); return; }
     setBusy(true); setProgress(1); setProgressLabel("正在准备菜单图片"); setNotice("正在自动旋转并识别表格小字，请保持页面打开…");
     try {
-      const parser = await import("./menu-parser.js");
       let result = null;
       let cloudMessage = "";
       try {
         setProgress(8); setProgressLabel("正在调用腾讯云表格识别 V3");
-        const imageBase64 = await parser.imageFileToBase64(file);
+        const imageBase64 = await imageFileToBase64(file);
         const cloud = await api("/api/admin/menu-ocr", { method: "POST", body: JSON.stringify({ image_base64: imageBase64 }) });
         if (cloud.configured) {
           setProgress(86);
-          result = parser.parseTencentMenuTables(cloud.table_detections, weekStart);
+          result = parseTencentMenuTables(cloud.table_detections, weekStart);
         } else cloudMessage = "腾讯云 OCR 尚未配置，已自动改用本机基础识别。";
       } catch (error) { cloudMessage = `腾讯云表格识别未成功（${error.message}），已自动改用本机基础识别。`; }
       if (!result) {
         setProgressLabel("正在使用本机中文 OCR 备用识别");
-        result = await parser.parseMenuImage(file, weekStart, setProgress);
+        result = await parseMenuImage(file, weekStart, setProgress);
         result.warnings = [cloudMessage, ...(result.warnings || [])].filter(Boolean);
       }
       const record = await api("/api/admin/menu-uploads", { method: "POST", body: JSON.stringify({ filename: file.name, menu: result.menu, warnings: result.warnings, recognized_lines: result.recognized_lines }) });
@@ -316,7 +293,6 @@ function MenuEditor({ menu, busy, onSave, saveLabel }) {
   const [quickText, setQuickText] = useState("");
   const [quickMessage, setQuickMessage] = useState("");
   useEffect(() => { setDraft(clone(menu)); setDayIndex(0); setMeal("breakfast"); setQuickText(""); setQuickMessage(""); }, [menu]);
-  useEffect(() => { setQuickText(""); setQuickMessage(""); }, [dayIndex, meal]);
   const day = draft.days[dayIndex];
   const categories = MENU_CATEGORIES[meal];
   const changeItems = (category, updater) => { const next = clone(draft); const current = next.days[dayIndex].meals[meal][category] || []; next.days[dayIndex].meals[meal][category] = updater(current); setDraft(next); };
@@ -324,19 +300,20 @@ function MenuEditor({ menu, busy, onSave, saveLabel }) {
   const addItem = (category) => changeItems(category, (items) => [...items, ""]);
   const removeItem = (category, itemIndex) => changeItems(category, (items) => items.filter((_, index) => index !== itemIndex));
   const applyQuickText = () => {
-    const parsed = parseQuickMenuText(quickText, meal);
-    if (!parsed.found.length) { setQuickMessage(`未识别到分类，请使用“${categories.join("、")}”作为标题`); return; }
+    const parsed = parseWeeklyMenuText(quickText);
+    if (!parsed.categories) { setQuickMessage("未匹配到菜单，请按“星期几 → 早餐/午餐/晚餐 → 分类 → 菜名”的格式输入"); return; }
     const next = clone(draft);
-    parsed.found.forEach((category) => { next.days[dayIndex].meals[meal][category] = parsed.categories[category]; });
-    setDraft(next); setQuickMessage(`已识别 ${parsed.found.length} 个分类、${parsed.count} 道菜${parsed.ignored ? `，忽略 ${parsed.ignored} 行标题前文字` : ""}`);
+    Object.entries(parsed.patches).forEach(([key, items]) => { const [targetDay, targetMeal, targetCategory] = key.split(":"); next.days[Number(targetDay)].meals[targetMeal][targetCategory] = items; });
+    setDraft(next); setQuickMessage(`已精准匹配 ${parsed.days} 天、${parsed.meals} 个餐次、${parsed.categories} 个分类，共 ${parsed.count} 道菜${parsed.ignored ? `；${parsed.ignored} 行因缺少星期/餐次/分类未填入` : ""}`);
   };
   const clearMeal = () => { if (!window.confirm(`确定清空${day.weekday}${MENU_LABELS[meal]}的全部菜品吗？`)) return; const next = clone(draft); categories.forEach((category) => { next.days[dayIndex].meals[meal][category] = []; }); setDraft(next); setQuickMessage("当前餐次已清空，保存后生效"); };
   const submit = async () => { const cleaned = clone(draft); cleaned.days.forEach((item) => Object.values(item.meals).forEach((mealData) => Object.keys(mealData).forEach((category) => { mealData[category] = mealData[category].map((dish) => String(dish).trim()).filter(Boolean); }))); setSaving(true); try { await onSave(cleaned); setDraft(cleaned); } finally { setSaving(false); } };
   return <div className="menu-editor">
+    <section className="menu-quick-entry weekly"><div><small>WEEKLY QUICK INPUT</small><h3>整周菜单文字自动匹配</h3><p>一次粘贴星期一至星期日的全部菜单。系统会依据星期、餐次和分类精准填入对应位置，不受当前选中日期影响。</p></div><textarea value={quickText} onChange={(event) => setQuickText(event.target.value)} placeholder={`星期一\n早餐\n热菜：宫保鸡丁、清蒸鱼\n中点：肉包、烧麦\n主食：白粥\n\n午餐\n热菜：红烧排骨、时蔬\n免费汤：紫菜蛋花汤\n主食：米饭\n\n星期二\n早餐\n热菜：炒青菜\n中点：馒头`}/><div className="menu-quick-format"><b>识别格式</b><span>星期一</span><i>→</i><span>早餐</span><i>→</i><span>热菜：</span><i>→</i><span>菜名</span></div><div className="menu-quick-actions"><span>{quickMessage || "支持星期一/周一、早餐/午餐/晚餐；分类标题后可逐行输入或用顿号分隔"}</span><button type="button" disabled={!quickText.trim()} onClick={applyQuickText}>识别整周并填入</button></div></section>
     <div className="menu-day-tabs">{draft.days.map((item, index) => <button key={item.date || index} className={dayIndex === index ? "active" : ""} onClick={() => setDayIndex(index)}><small>{item.weekday?.replace("星期", "周")}</small><strong>{item.date?.slice(5).replace("-", "/")}</strong></button>)}</div>
     <label className="menu-admin-day-select"><span>选择本周日期</span><select value={dayIndex} onChange={(event) => setDayIndex(Number(event.target.value))}>{draft.days.map((item, index) => <option key={item.date || index} value={index}>{item.weekday} · {item.date?.slice(5).replace("-", "月")}日</option>)}</select></label>
     <div className="menu-editor-toolbar"><div className="menu-current-day"><small>当前编辑</small><strong>{day.weekday} · {day.date?.replaceAll("-", ".")}</strong></div><div>{Object.entries(MENU_LABELS).map(([key, label]) => <button key={key} className={meal === key ? "active" : ""} onClick={() => setMeal(key)}>{label}</button>)}</div></div>
-    <section className="menu-quick-entry"><div><small>QUICK INPUT</small><h3>文字自动分组</h3><p>先写分类标题，再逐行输入菜名；也支持用顿号或逗号分隔。只替换识别到的分类。</p></div><textarea value={quickText} onChange={(event) => setQuickText(event.target.value)} placeholder={`${categories[0]}：\n宫保鸡丁\n清蒸鱼\n\n${categories[1]}：\n请在这里继续输入`}/><div className="menu-quick-actions"><span>{quickMessage || `可识别：${categories.join("、")}`}</span><button type="button" className="clear" onClick={clearMeal}>清空当前餐次</button><button type="button" disabled={!quickText.trim()} onClick={applyQuickText}>自动识别并填入</button></div></section>
+    <div className="menu-current-actions"><span>下方可继续逐项校对当前餐次</span><button type="button" onClick={clearMeal}>清空当前餐次</button></div>
     <div className="menu-category-editor">{categories.map((category, index) => { const items = day.meals?.[meal]?.[category] || []; return <article key={category} className={index % 2 ? "alternate" : ""}><header><span><i>{String(index + 1).padStart(2, "0")}</i><strong>{category}</strong></span><button type="button" onClick={() => addItem(category)}>＋ 添加菜品</button></header>{items.length ? <div className="menu-item-input-grid">{items.map((item, itemIndex) => <label key={`${category}-${itemIndex}`}><span>{String(itemIndex + 1).padStart(2, "0")}</span><input value={item} onChange={(event) => updateItem(category, itemIndex, event.target.value)} placeholder="输入菜名"/><button type="button" aria-label={`删除${item || "菜品"}`} onClick={() => removeItem(category, itemIndex)}><X/></button></label>)}</div> : <button type="button" className="menu-no-item" onClick={() => addItem(category)}>本分类暂无菜品，点击添加</button>}</article>; })}</div>
     <button className="menu-save" disabled={busy || saving} onClick={submit}>{saving ? "正在保存…" : saveLabel}</button>
   </div>;
