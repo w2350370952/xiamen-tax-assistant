@@ -381,6 +381,22 @@ async function adminRoutes(request, url, path) {
     return json({ menu: state.menus.current ? sanitizeMenu(state.menus.current) : null, version: state.menus.version, dictionary: state.menus.dictionary });
   }
 
+  if (path === "/api/admin/menu-dictionary" && request.method === "POST") {
+    const body = await bodyJson(request);
+    const name = text(body.name, 100);
+    const meal = ["breakfast", "lunch", "dinner"].includes(body.meal) ? body.meal : "";
+    const category = text(body.category, 30);
+    if (!name || !meal || !MENU_MEALS[meal]?.includes(category)) return fail("菜名、餐次或分类不正确");
+    if (/无法识别|看不清|未识别/.test(name)) return fail("无法确认的文字不能加入历史菜品库");
+    const state = await readState();
+    const existing = dictionaryEntry(state.menus.dictionary, name, meal, category);
+    if (!existing) state.menus.dictionary.push({ name, meal, category, aliases: [], uses: 1, updated_at: new Date().toISOString() });
+    state.menus.dictionary.sort((a, b) => b.uses - a.uses || a.name.localeCompare(b.name, "zh-CN"));
+    if (state.menus.dictionary.length > 1200) state.menus.dictionary.length = 1200;
+    await writeState(state);
+    return json({ added: !existing, dictionary: state.menus.dictionary });
+  }
+
   if (path === "/api/admin/menu-ocr" && request.method === "POST") {
     const body = await bodyJson(request);
     const imageBase64 = String(body.image_base64 || "").replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, "");
