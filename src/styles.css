@@ -1504,6 +1504,7 @@ header p {
   font-size: 12px;
 }
 .menu-banner aside {
+  display: none;
   min-width: 92px;
   padding-left: 22px;
   border-left: 1px solid #cee0d6;
