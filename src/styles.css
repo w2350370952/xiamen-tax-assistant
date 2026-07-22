@@ -1429,10 +1429,13 @@ header p {
   border-radius: 13px;
   color: #546a60;
   background: #fff;
+  cursor: pointer;
 }
-.menu-date-nav button:nth-child(2) {
-  min-width: 98px;
-  font-weight: 750;
+.menu-date-nav button:disabled {
+  color: #aab6b0;
+  background: #f3f6f4;
+  cursor: not-allowed;
+  opacity: .6;
 }
 .menu-date-nav svg {
   width: 18px;
@@ -1737,10 +1740,8 @@ header p {
     width: 100%;
     align-self: stretch;
   }
-  .menu-date-nav button:nth-child(2) {
-    flex: 1;
-  }
   .menu-week-select {
+    flex: 1;
     width: 100%;
     min-width: 0;
   }
