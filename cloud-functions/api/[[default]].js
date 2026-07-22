@@ -68,6 +68,7 @@ function normalizeState(raw) {
       version: state.menus?.version || defaultVersion("暂无已发布菜单"),
       uploads: Array.isArray(state.menus?.uploads) ? state.menus.uploads.map((upload) => ({ ...upload, menu: sanitizeMenu(upload.menu), source_menu: upload.source_menu ? sanitizeMenu(upload.source_menu) : null })) : [],
       dictionary: sanitizeDishDictionary(state.menus?.dictionary, state.menus?.current),
+      ratings: sanitizeMenuRatings(state.menus?.ratings),
     },
   };
 }
@@ -274,6 +275,42 @@ function normalizedDishName(value) {
   return text(value, 100).toLowerCase().replace(/[\s·•,，。；;：:、\/\\()（）【】\[\]“”"'‘’+-]/g, "");
 }
 
+function menuRatingKey(name, meal, category) {
+  return `${dictionaryMeal(meal, category)}|${text(category, 30)}|${normalizedDishName(name)}`;
+}
+
+function sanitizeMenuRatings(raw) {
+  const result = {};
+  for (const source of Object.values(raw && typeof raw === "object" ? raw : {}).slice(0, 2000)) {
+    const sourceMeal = ["breakfast", "lunch", "dinner"].includes(source?.meal) ? source.meal : "";
+    const category = text(source?.category, 30), name = text(source?.name, 100);
+    if (!name || !sourceMeal || !MENU_MEALS[sourceMeal]?.includes(category)) continue;
+    const meal = dictionaryMeal(sourceMeal, category), voters = {};
+    for (const [voter, vote] of Object.entries(source?.voters && typeof source.voters === "object" ? source.voters : {}).slice(0, 500)) if (["like", "dislike"].includes(vote)) voters[text(voter, 64)] = vote;
+    const key = menuRatingKey(name, meal, category), existing = result[key];
+    if (existing) Object.assign(existing.voters, voters);
+    else result[key] = { name, meal, category, voters };
+  }
+  for (const rating of Object.values(result)) { const votes = Object.values(rating.voters); rating.likes = votes.filter((vote) => vote === "like").length; rating.dislikes = votes.filter((vote) => vote === "dislike").length; }
+  return result;
+}
+
+function canonicalDish(dictionary, name, meal, category) {
+  const normalized = normalizedDishName(name), storedMeal = dictionaryMeal(meal, category);
+  return dictionary.find((entry) => entry.meal === storedMeal && entry.category === category && (normalizedDishName(entry.name) === normalized || (entry.aliases || []).some((alias) => normalizedDishName(alias) === normalized))) || null;
+}
+
+function publicRatingsForMenu(menu, dictionary, ratings) {
+  const result = {};
+  for (const day of menu?.days || []) for (const [meal, categories] of Object.entries(day.meals || {})) for (const [category, items] of Object.entries(categories || {})) for (const dish of items || []) {
+    const canonical = canonicalDish(dictionary, dish, meal, category);
+    const storedRating = ratings[menuRatingKey(canonical?.name || dish, meal, category)];
+    const clientKey = menuRatingKey(dish, meal, category);
+    result[clientKey] = { likes: storedRating?.likes || 0, dislikes: storedRating?.dislikes || 0 };
+  }
+  return result;
+}
+
 function sanitizeDishDictionary(raw, currentMenu = null) {
   const entries = [];
   for (const source of Array.isArray(raw) ? raw.slice(0, 1200) : []) {
@@ -354,6 +391,26 @@ function markCourseUpdate(majorData, remark) {
   };
 }
 
+async function voteMenuDish(request) {
+  const body = await bodyJson(request);
+  const visitorId = text(body.visitor_id, 120), dish = text(body.dish, 100);
+  const meal = ["breakfast", "lunch", "dinner"].includes(body.meal) ? body.meal : "";
+  const category = text(body.category, 30), vote = ["like", "dislike"].includes(body.vote) ? body.vote : "";
+  if (visitorId.length < 8 || !dish || !meal || !MENU_MEALS[meal]?.includes(category) || !vote) return fail("评价信息不完整");
+  const state = await readState(), menu = state.menus.current ? sanitizeMenu(state.menus.current) : null;
+  const exists = menu?.days?.some((day) => (day.meals?.[meal]?.[category] || []).some((item) => normalizedDishName(item) === normalizedDishName(dish)));
+  if (!exists) return fail("当前已发布菜单中没有这道菜", 404);
+  const canonical = canonicalDish(state.menus.dictionary, dish, meal, category);
+  const name = canonical?.name || dish, storedMeal = dictionaryMeal(meal, category), key = menuRatingKey(name, storedMeal, category);
+  const rating = state.menus.ratings[key] || { name, meal: storedMeal, category, voters: {}, likes: 0, dislikes: 0 };
+  const voter = sha256(visitorId).slice(0, 32), previous = rating.voters[voter] || null;
+  if (previous === vote) delete rating.voters[voter]; else rating.voters[voter] = vote;
+  const votes = Object.values(rating.voters); rating.likes = votes.filter((item) => item === "like").length; rating.dislikes = votes.filter((item) => item === "dislike").length;
+  state.menus.ratings[key] = rating;
+  await writeState(state);
+  return json({ key: menuRatingKey(dish, meal, category), rating: { likes: rating.likes, dislikes: rating.dislikes }, user_vote: previous === vote ? null : vote });
+}
+
 async function login(request) {
   const body = await bodyJson(request);
   const userOk = text(body.username, 80) === ADMIN_USER;
@@ -423,6 +480,14 @@ async function adminRoutes(request, url, path) {
     const current = state.menus.dictionary[index];
     const aliases = [...(current.aliases || [])];
     if (normalizedDishName(current.name) !== normalizedDishName(name) && !aliases.some((alias) => normalizedDishName(alias) === normalizedDishName(current.name))) aliases.push(current.name);
+    const oldRatingKey = menuRatingKey(current.name, current.meal, current.category);
+    const newRatingKey = menuRatingKey(name, storedMeal, category);
+    if (oldRatingKey !== newRatingKey && state.menus.ratings[oldRatingKey]) {
+      const oldRating = state.menus.ratings[oldRatingKey], targetRating = state.menus.ratings[newRatingKey] || { name, meal: storedMeal, category, voters: {} };
+      targetRating.name = name; targetRating.meal = storedMeal; targetRating.category = category; targetRating.voters = { ...(targetRating.voters || {}), ...(oldRating.voters || {}) };
+      const votes = Object.values(targetRating.voters); targetRating.likes = votes.filter((vote) => vote === "like").length; targetRating.dislikes = votes.filter((vote) => vote === "dislike").length;
+      state.menus.ratings[newRatingKey] = targetRating; delete state.menus.ratings[oldRatingKey];
+    }
     state.menus.dictionary[index] = { ...current, name, meal: storedMeal, category, aliases: aliases.slice(0, 30), updated_at: new Date().toISOString() };
     state.menus.dictionary.sort((a, b) => b.uses - a.uses || a.name.localeCompare(b.name, "zh-CN"));
     await writeState(state);
@@ -654,6 +719,7 @@ export async function onRequest({ request }) {
   const path = url.pathname.replace(/\/+$/, "") || "/";
   try {
     if (path === "/api/analytics/visit" && request.method === "POST") return await recordAnonymousVisit(request);
+    if (path === "/api/menu-vote" && request.method === "POST") return await voteMenuDish(request);
     if ((path === "/api/live-courses" || path.startsWith("/api/live-courses/") || path === "/api/courses") && request.method === "GET") {
       const state = await readState();
       const pathMajor = path.startsWith("/api/live-courses/") ? decodeURIComponent(path.slice("/api/live-courses/".length)) : null;
@@ -662,7 +728,8 @@ export async function onRequest({ request }) {
     }
     if (path === "/api/live-menu" && request.method === "GET") {
       const state = await readState();
-      return json({ menu: state.menus.current ? sanitizeMenu(state.menus.current) : null, version: state.menus.version }, 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
+      const menu = state.menus.current ? sanitizeMenu(state.menus.current) : null;
+      return json({ menu, version: state.menus.version, ratings: publicRatingsForMenu(menu, state.menus.dictionary, state.menus.ratings) }, 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
     }
     if (path.startsWith("/api/admin/")) return await adminRoutes(request, url, path);
     return fail("接口不存在", 404);
