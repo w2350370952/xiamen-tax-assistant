@@ -1,9 +1,15 @@
+export const MENU_CATEGORIES = {
+  breakfast: ["热菜", "中点", "主食", "西点", "饮料"],
+  lunch: ["热菜", "免费汤", "炖汤", "主食", "面档", "饮品", "煎扒档", "饮料"],
+  dinner: ["热菜", "免费汤", "主食", "面档", "煎扒档"],
+};
+
 const MEAL_LAYOUT = {
   breakfast: {
     label: "早餐",
     range: [0.055, 0.37],
     categories: [
-      [0.065, 0.105, "小菜"],
+      [0.065, 0.105, "热菜"],
       [0.105, 0.145, "热菜"],
       [0.145, 0.255, "中点"],
       [0.255, 0.285, "主食"],
@@ -16,13 +22,13 @@ const MEAL_LAYOUT = {
     range: [0.37, 0.72],
     categories: [
       [0.395, 0.555, "热菜"],
-      [0.555, 0.585, "炖罐汤"],
-      [0.585, 0.61, "快汤"],
+      [0.555, 0.585, "炖汤"],
+      [0.585, 0.61, "免费汤"],
       [0.61, 0.63, "主食"],
       [0.63, 0.655, "面档"],
-      [0.655, 0.68, "佐品"],
+      [0.655, 0.68, "饮品"],
       [0.68, 0.715, "煎扒档"],
-      [0.715, 0.735, "水果/饮料"],
+      [0.715, 0.735, "饮料"],
     ],
   },
   dinner: {
@@ -30,11 +36,10 @@ const MEAL_LAYOUT = {
     range: [0.72, 0.985],
     categories: [
       [0.75, 0.875, "热菜"],
-      [0.875, 0.9, "炖罐汤"],
+      [0.875, 0.9, "免费汤"],
       [0.9, 0.92, "主食"],
       [0.92, 0.945, "面档"],
       [0.945, 0.978, "煎扒档"],
-      [0.978, 1.01, "水果"],
     ],
   },
 };
@@ -45,7 +50,7 @@ const iso = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padSt
 const addDays = (date, count) => { const next = new Date(date); next.setDate(next.getDate() + count); return next; };
 
 function emptyMeals() {
-  return Object.fromEntries(Object.entries(MEAL_LAYOUT).map(([meal, config]) => [meal, Object.fromEntries(config.categories.map(([, , category]) => [category, []]))]));
+  return Object.fromEntries(Object.entries(MENU_CATEGORIES).map(([meal, categories]) => [meal, Object.fromEntries(categories.map((category) => [category, []]))]));
 }
 
 function cleanText(value) {
@@ -57,7 +62,7 @@ function cleanText(value) {
 }
 
 function ignoredText(value) {
-  return !value || value.length < 2 || /星期[一二三四五六日]|研究生|餐厅|菜[单谱]|20\d{2}年|早餐|午餐|晚餐|送餐|D厅|^(小菜|热菜|中点|主食|西点|饮料|炖罐汤|快汤|面档|佐品|煎扒档|水果)$/.test(value);
+  return !value || value.length < 2 || /星期[一二三四五六日]|研究生|餐厅|菜[单谱]|20\d{2}年|早餐|午餐|晚餐|送餐|D厅|^(小菜|热菜|中点|主食|西点|饮料|免费汤|炖汤|炖罐汤|快汤|面档|饮品|佐品|煎扒档|水果|水果\/饮料)$/.test(value);
 }
 
 function flattenLines(blocks = []) {
@@ -177,11 +182,16 @@ export async function parseMenuImage(file, weekStart, onProgress = () => {}) {
 
 export const menuMealLabels = { breakfast: "早餐", lunch: "午餐", dinner: "晚餐" };
 
-const CATEGORY_NAMES = [...new Set(Object.values(MEAL_LAYOUT).flatMap((meal) => meal.categories.map(([, , category]) => category)))];
+const CATEGORY_ALIASES = {
+  breakfast: { 热菜: ["热菜", "小菜"], 中点: ["中点"], 主食: ["主食"], 西点: ["西点"], 饮料: ["水果饮料", "饮料", "水果"] },
+  lunch: { 热菜: ["热菜"], 免费汤: ["免费汤", "快汤"], 炖汤: ["炖罐汤", "炖汤"], 主食: ["主食"], 面档: ["面档"], 饮品: ["饮品", "佐品"], 煎扒档: ["煎扒档"], 饮料: ["水果饮料", "饮料", "水果"] },
+  dinner: { 热菜: ["热菜"], 免费汤: ["免费汤", "炖罐汤", "炖汤", "快汤"], 主食: ["主食"], 面档: ["面档"], 煎扒档: ["煎扒档"] },
+};
 
-function matchedCategory(value) {
+function matchedCategory(value, meal) {
   const text = cleanText(value).replace(/\//g, "");
-  return CATEGORY_NAMES.find((category) => text.includes(category.replace(/\//g, ""))) || (text.includes("水果") || text.includes("果盘") ? "水果" : null);
+  const entries = Object.entries(CATEGORY_ALIASES[meal] || {}).flatMap(([category, aliases]) => aliases.map((alias) => [category, alias])).sort((a, b) => b[1].length - a[1].length);
+  return entries.find(([, alias]) => text.includes(alias))?.[0] || null;
 }
 
 function tableTop(table) {
@@ -243,16 +253,16 @@ export function parseTencentMenuTables(tableDetections, weekStart) {
       for (let index = 0; index < 7; index += 1) if (columns[index] === null) columns[index] = Math.round(start + step * index);
     }
     const firstDayColumn = Math.min(...columns);
-    const categoryCells = cells.map((cell) => ({ cell, category: matchedCategory(cell.Text) })).filter((entry) => entry.category && Number(entry.cell.ColTl || 0) < firstDayColumn);
+    const categoryCells = cells.map((cell) => ({ cell, category: matchedCategory(cell.Text, meal) })).filter((entry) => entry.category && Number(entry.cell.ColTl || 0) < firstDayColumn);
 
     for (const cell of cells) {
       const text = cellText(cell);
-      if (ignoredText(text) || matchedCategory(text) || Number(cell.ColBr ?? (cell.ColTl || 0)) < firstDayColumn) continue;
+      if (ignoredText(text) || matchedCategory(text, meal) || Number(cell.ColBr ?? (cell.ColTl || 0)) < firstDayColumn) continue;
       const category = nearestCategory(cell, categoryCells, meal);
       if (!category || !Object.prototype.hasOwnProperty.call(days[0].meals[meal], category)) continue;
       const targets = columns.map((column, index) => cellOverlapsColumn(cell, column) ? index : -1).filter((index) => index >= 0);
       if (!targets.length) continue;
-      const items = String(cell.Text || "").split(/\n|、|；|;/).map(cleanText).filter((item) => !ignoredText(item) && !matchedCategory(item));
+      const items = String(cell.Text || "").split(/\n|、|；|;/).map(cleanText).filter((item) => !ignoredText(item) && !matchedCategory(item, meal));
       if (!items.length) continue;
       if (Number(cell.Confidence || 0) < 70) lowConfidence += items.length;
       for (const dayIndex of targets) {
