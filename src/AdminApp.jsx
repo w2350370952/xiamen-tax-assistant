@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, CalendarDays, CheckCircle2, FileImage, FileText, LogOut, Pencil, ShieldCheck, Soup, Trash2, UploadCloud, UtensilsCrossed, X } from "lucide-react";
-import { MENU_CATEGORIES, imageFileToBase64, parseMenuImage, parseTencentMenuTables, parseWeeklyMenuText } from "./menu-parser.js";
+import { ArrowLeft, BarChart3, CalendarDays, CheckCircle2, Eye, FileImage, FileText, LogOut, Pencil, RefreshCw, ShieldCheck, Smartphone, Soup, Trash2, UploadCloud, Users, UtensilsCrossed, X } from "lucide-react";
 
 const MAJORS = [
   { id: "tax", label: "税务" },
@@ -141,11 +140,11 @@ export default function AdminApp() {
   return <div className="admin-shell">
     <header className="admin-topbar"><a href="/"><ArrowLeft size={18}/>返回学生端</a><div><ShieldCheck/><span><strong>厦国会专硕课程助手</strong><small>管理员控制台 · 腾讯云 EdgeOne</small></span></div><button onClick={logout}><LogOut size={17}/>退出登录</button></header>
     <main className="admin-main">
-      <section className="admin-heading"><div><em>{section === "menu" ? "DINING MANAGEMENT" : "COURSE MANAGEMENT"}</em><h1>{section === "menu" ? "一周菜单管理" : `${MAJORS.find((item) => item.id === major)?.label}专业课程管理`}</h1><p>{section === "menu" ? "上传食堂一周菜单图片，自动识别并校对后发布到学生端。" : "各专业课程独立保存，上传和调课只影响当前选择的专业。"}</p></div>{section !== "menu" && <div className="admin-heading-actions"><label className="major-select">管理专业<select value={major} onChange={(event) => { setMajor(event.target.value); setNotice(""); }} disabled={busy}>{MAJORS.map((item) => <option key={item.id} value={item.id}>{item.label}专业</option>)}</select></label>{section === "uploads" && <label className={`upload-button ${busy ? "disabled" : ""}`}><UploadCloud/>上传课程 PDF<input ref={fileRef} type="file" accept="application/pdf,.pdf" disabled={busy} onChange={uploadPdf}/></label>}</div>}</section>
-      <nav className="admin-tabs"><button className={section === "published" ? "active" : ""} onClick={() => setSection("published")}><CalendarDays/>现有课程 <span>{courses.length}</span></button><button className={section === "uploads" ? "active" : ""} onClick={() => setSection("uploads")}><UploadCloud/>PDF 上传与审核 <span>{uploads.length}</span></button><button className={section === "menu" ? "active" : ""} onClick={() => setSection("menu")}><UtensilsCrossed/>今日菜单</button></nav>
+      <section className="admin-heading"><div><em>{section === "menu" ? "DINING MANAGEMENT" : section === "analytics" ? "VISITOR ANALYTICS" : "COURSE MANAGEMENT"}</em><h1>{section === "menu" ? "一周菜单管理" : section === "analytics" ? "访问指标分析" : `${MAJORS.find((item) => item.id === major)?.label}专业课程管理`}</h1><p>{section === "menu" ? "上传食堂一周菜单图片，自动识别并校对后发布到学生端。" : section === "analytics" ? "按北京时间查看每日、每小时和设备系统的匿名访问情况。" : "各专业课程独立保存，上传和调课只影响当前选择的专业。"}</p></div>{!['menu','analytics'].includes(section) && <div className="admin-heading-actions"><label className="major-select">管理专业<select value={major} onChange={(event) => { setMajor(event.target.value); setNotice(""); }} disabled={busy}>{MAJORS.map((item) => <option key={item.id} value={item.id}>{item.label}专业</option>)}</select></label>{section === "uploads" && <label className={`upload-button ${busy ? "disabled" : ""}`}><UploadCloud/>上传课程 PDF<input ref={fileRef} type="file" accept="application/pdf,.pdf" disabled={busy} onChange={uploadPdf}/></label>}</div>}</section>
+      <nav className="admin-tabs"><button className={section === "published" ? "active" : ""} onClick={() => setSection("published")}><CalendarDays/>现有课程 <span>{courses.length}</span></button><button className={section === "uploads" ? "active" : ""} onClick={() => setSection("uploads")}><UploadCloud/>PDF 上传与审核 <span>{uploads.length}</span></button><button className={section === "menu" ? "active" : ""} onClick={() => setSection("menu")}><UtensilsCrossed/>今日菜单</button><button className={section === "analytics" ? "active" : ""} onClick={() => setSection("analytics")}><BarChart3/>指标分析</button></nav>
       {busy && progress > 0 && <div className="parse-progress"><span style={{ width: `${progress}%` }}/><b>{progress}%</b><small>{progressLabel}</small></div>}
       {notice && <div className="admin-notice">{notice}<button onClick={() => setNotice("")}><X size={16}/></button></div>}
-      {section === "menu" ? <MenuManager busy={busy} setBusy={setBusy} setProgress={setProgress} setProgressLabel={setProgressLabel} setNotice={setNotice}/> : section === "published" ? <PublishedCourses majorLabel={MAJORS.find((item) => item.id === major)?.label} courses={courses} version={version} busy={busy} onSave={savePublishedCourse} onDelete={deletePublishedCourse}/> : <div className="admin-workspace">
+      {section === "analytics" ? <AnalyticsPanel/> : section === "menu" ? <MenuManager busy={busy} setBusy={setBusy} setProgress={setProgress} setProgressLabel={setProgressLabel} setNotice={setNotice}/> : section === "published" ? <PublishedCourses majorLabel={MAJORS.find((item) => item.id === major)?.label} courses={courses} version={version} busy={busy} onSave={savePublishedCourse} onDelete={deletePublishedCourse}/> : <div className="admin-workspace">
         <aside className="upload-list"><div className="upload-list-title"><h2>上传记录</h2><span>{uploads.length}</span></div>{uploads.length ? uploads.map((item) => <button key={item.id} className={activeId === item.id ? "active" : ""} onClick={() => setActiveId(item.id)}><FileText/><span><strong>{item.filename}</strong><small>{new Date(item.uploaded_at).toLocaleString("zh-CN")}</small></span><em className={item.status}>{item.status === "published" ? "已发布" : "待审核"}</em></button>) : <div className="upload-empty"><FileText/><p>还没有上传记录</p><small>请点击右上角上传课程 PDF</small></div>}</aside>
         <section className="review-panel">{active ? <><div className="review-head"><div><span className={`status ${active.status}`}>{active.status === "published" ? <CheckCircle2/> : <Pencil/>}{active.status === "published" ? "已发布版本" : "待审核"}</span><h2>{active.filename}</h2><p>共识别 {active.drafts?.length || 0} 节课程{active.warnings?.length ? ` · ${active.warnings.length} 条提示` : ""}</p></div><div><button className="danger" disabled={busy} onClick={() => deleteUpload(active.id)}><Trash2/>删除文件记录</button><button className="publish" disabled={busy || !active.drafts?.length} onClick={() => publish(active)}><CheckCircle2/>确认发布</button></div></div>{active.warnings?.length > 0 && <div className="parse-warnings">{active.warnings.map((warning, index) => <p key={index}>• {warning}</p>)}</div>}<CourseReview upload={active} onSave={saveDraft} onDelete={deleteDraft}/></> : <div className="review-empty"><UploadCloud/><h2>上传课程总表</h2><p>系统会自动识别日期、时段、课程、教师、班级、教室和备注。</p></div>}</section>
       </div>}
@@ -187,12 +186,69 @@ function CourseReview({ upload, onSave, onDelete }) {
   return <><div className="course-review-list">{upload.drafts?.map((course, index) => <article key={course.id}><i className={`type-${course.course_type}`}/><div><small>{course.date} · {course.weekday} · {course.period} {course.start_time}–{course.end_time}</small><h3>{course.course_name}</h3><p>{course.teacher || "教师未填写"}{course.classroom ? ` · ${course.classroom}` : ""}{course.remark ? ` · ${course.remark}` : ""}</p></div><span>#{index + 1}</span><button onClick={() => setEditing(course)}><Pencil/>编辑</button><button className="icon-danger" onClick={() => onDelete(upload.id, course.id)}><Trash2/>删除</button></article>)}</div>{editing && <div className="editor-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setEditing(null)}><form className="course-editor" onSubmit={submit}><button type="button" className="editor-close" onClick={() => setEditing(null)}><X/></button><em>COURSE REVIEW</em><h2>校对课程信息</h2><div>{fields.map(([key, label]) => <label key={key} className={key === "course_name" || key === "remark" ? "wide" : ""}>{label}{key === "course_type" ? <select name={key} defaultValue={editing[key] || "other"}><option value="tax">税务课程</option><option value="english">英语课程</option><option value="digital">人工智能/数字经济</option><option value="other">其他</option></select> : <input name={key} defaultValue={editing[key] || ""} required={["date", "weekday", "period", "start_time", "end_time", "course_name"].includes(key)}/>}</label>)}</div><button className="save-course">保存修改</button></form></div>}</>;
 }
 
+function AnalyticsPanel() {
+  const [range, setRange] = useState(7);
+  const [data, setData] = useState(null);
+  const [selectedDate, setSelectedDate] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const load = async () => {
+    setLoading(true); setError("");
+    try {
+      const result = await api(`/api/admin/analytics?days=${range}`);
+      setData(result);
+      setSelectedDate((current) => result.days?.some((item) => item.date === current) ? current : result.days?.at(-1)?.date || "");
+    } catch (loadError) { setError(loadError.message); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, [range]);
+  const days = data?.days || [];
+  const selected = days.find((item) => item.date === selectedDate) || days.at(-1) || { hours: [], devices: [], views: 0, visitors: 0 };
+  const maxDaily = Math.max(1, ...days.map((item) => item.visitors));
+  const maxHourly = Math.max(1, ...(selected.hours || []).map((item) => item.visitors));
+  const deviceTotal = Math.max(1, ...(selected.devices || []).map(() => 0), (selected.devices || []).reduce((sum, item) => sum + item.visitors, 0));
+  const summary = data?.summary || { today_views: 0, today_visitors: 0, range_views: 0, range_visitors: 0, mobile_share: 0 };
+  return <section className="analytics-panel">
+    <div className="analytics-head"><div><span className="status published"><BarChart3/>北京时间统计</span><h2>网站访问概览</h2><p>人数按匿名设备去重；同一设备多次打开计为 1 人、多次访问。</p></div><div className="analytics-controls"><div>{[7,30,90].map((value) => <button key={value} className={range === value ? "active" : ""} onClick={() => setRange(value)}>近 {value} 天</button>)}</div><button className="analytics-refresh" disabled={loading} onClick={load}><RefreshCw className={loading ? "spinning" : ""}/>刷新</button></div></div>
+    {error && <div className="analytics-error">{error}</div>}
+    <div className="analytics-metrics"><article><span><Users/></span><div><small>今日访客</small><strong>{summary.today_visitors}<em>人</em></strong></div></article><article><span><Eye/></span><div><small>今日访问</small><strong>{summary.today_views}<em>次</em></strong></div></article><article><span><BarChart3/></span><div><small>近 {range} 天访客</small><strong>{summary.range_visitors}<em>人</em></strong><p>{summary.range_views} 次访问</p></div></article><article><span><Smartphone/></span><div><small>移动端占比</small><strong>{summary.mobile_share}<em>%</em></strong><p>iOS、Android、HarmonyOS</p></div></article></div>
+    <div className="analytics-card daily-card"><header><div><small>DAILY VISITORS</small><h3>每日访问人数</h3></div><span>点击柱形可查看当天每小时数据</span></header><div className="daily-chart-scroll"><div className={`daily-chart range-${range}`}>{days.map((item, index) => <button key={item.date} className={selected.date === item.date ? "active" : ""} onClick={() => setSelectedDate(item.date)} title={`${item.date}：${item.visitors} 人，${item.views} 次`}><b>{item.visitors || ""}</b><i><span style={{height:`${item.visitors ? Math.max(8,item.visitors/maxDaily*100) : 2}%`}}/></i><small>{range <= 7 || index % (range === 30 ? 3 : 7) === 0 ? item.date.slice(5).replace("-","/") : ""}</small></button>)}</div></div></div>
+    <div className="analytics-detail-grid"><div className="analytics-card hourly-card"><header><div><small>HOURLY TRAFFIC</small><h3>{selected.date || "今日"} · 每小时人数</h3></div><label>选择日期<select value={selected.date || ""} onChange={(event) => setSelectedDate(event.target.value)}>{days.map((item) => <option key={item.date} value={item.date}>{item.date} · {item.visitors} 人</option>)}</select></label></header><div className="hour-chart-scroll"><div className="hour-chart">{(selected.hours || []).map((item) => <article key={item.hour} title={`${item.hour}:00：${item.visitors} 人，${item.views} 次`}><b>{item.visitors || ""}</b><i><span style={{height:`${item.visitors ? Math.max(8,item.visitors/maxHourly*100) : 2}%`}}/></i><small>{item.hour}</small></article>)}</div></div><footer>所选日期共 {selected.visitors || 0} 人、{selected.views || 0} 次访问</footer></div>
+      <div className="analytics-card device-card"><header><div><small>DEVICE SYSTEM</small><h3>{selected.date || "今日"} · 访问设备</h3></div></header>{selected.devices?.length ? <div className="device-list">{selected.devices.map((item) => <article key={item.name}><span className={`device-dot device-${item.name.toLowerCase()}`}/><div><strong>{item.name}</strong><small>{item.visitors} 人 · {item.views} 次</small></div><b>{Math.round(item.visitors/deviceTotal*100)}%</b><i><span style={{width:`${item.visitors/deviceTotal*100}%`}}/></i></article>)}</div> : <div className="analytics-empty"><Smartphone/><p>当天还没有设备访问记录</p></div>}</div>
+    </div>
+    <div className="analytics-privacy"><ShieldCheck/><span><strong>匿名统计</strong><small>系统不保存姓名、手机号和完整 IP；访客人数是按浏览器中的匿名设备标识估算，同一个人使用两台设备会算作两位访客。</small></span></div>
+  </section>;
+}
+
 const MENU_LABELS = { breakfast: "早餐", lunch: "午餐", dinner: "晚餐" };
+const MENU_CATEGORIES = {
+  breakfast: ["热菜", "中点", "主食", "西点", "饮料"],
+  lunch: ["热菜", "免费汤", "炖汤", "主食", "面档", "饮品", "煎扒档", "饮料"],
+  dinner: ["热菜", "免费汤", "主食", "面档", "煎扒档"],
+};
+const MENU_TEXT_ALIASES = {
+  breakfast: { 热菜: ["热菜", "小菜"], 中点: ["中点"], 主食: ["主食"], 西点: ["西点"], 饮料: ["饮料", "水果/饮料", "水果"] },
+  lunch: { 热菜: ["热菜"], 免费汤: ["免费汤", "快汤"], 炖汤: ["炖汤", "炖罐汤"], 主食: ["主食"], 面档: ["面档"], 饮品: ["饮品", "佐品"], 煎扒档: ["煎扒档"], 饮料: ["饮料", "水果/饮料", "水果"] },
+  dinner: { 热菜: ["热菜"], 免费汤: ["免费汤", "快汤", "炖汤", "炖罐汤"], 主食: ["主食"], 面档: ["面档"], 煎扒档: ["煎扒档"] },
+};
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const dateIso = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 function currentMonday() { const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date()); const map = Object.fromEntries(parts.map((part) => [part.type, part.value])); const date = new Date(`${map.year}-${map.month}-${map.day}T12:00:00`); date.setDate(date.getDate() - ((date.getDay() + 6) % 7)); return dateIso(date); }
 function blankMeals() { return Object.fromEntries(Object.entries(MENU_CATEGORIES).map(([meal, categories]) => [meal, Object.fromEntries(categories.map((category) => [category, []]))])); }
 function blankMenu(weekStart) { const monday = new Date(`${weekStart}T12:00:00`); const weekdays = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]; return { week_start: weekStart, days: weekdays.map((weekday, index) => { const date = new Date(monday); date.setDate(date.getDate() + index); return { date: dateIso(date), weekday, meals: blankMeals() }; }) }; }
+function parseQuickMenuText(source, meal) {
+  const result = Object.fromEntries(MENU_CATEGORIES[meal].map((category) => [category, []]));
+  const aliases = Object.entries(MENU_TEXT_ALIASES[meal]).flatMap(([category, names]) => names.map((name) => ({ category, name }))).sort((a, b) => b.name.length - a.name.length);
+  const found = new Set(); let current = null; let ignored = 0;
+  const addItems = (category, value) => String(value || "").split(/、|，|,|；|;|\t|\s{2,}/).map((item) => item.replace(/^\s*(?:[-•·]|(?:\d+|[①-⑳])[.、)）])\s*/, "").trim()).filter(Boolean).forEach((item) => { if (!result[category].includes(item)) result[category].push(item); });
+  for (const rawLine of String(source || "").split(/\r?\n/)) {
+    const line = rawLine.trim().replace(/^[【\[]|[】\]]$/g, ""); if (!line) continue;
+    const match = aliases.find(({ name }) => line === name || line.startsWith(`${name}：`) || line.startsWith(`${name}:`) || new RegExp(`^${name}\\s+`).test(line));
+    if (match) { current = match.category; found.add(current); addItems(current, line.slice(match.name.length).replace(/^\s*[:：]\s*/, "")); }
+    else if (current) addItems(current, line); else ignored += 1;
+  }
+  return { categories: result, found: [...found], ignored, count: Object.values(result).reduce((sum, items) => sum + items.length, 0) };
+}
 
 function MenuManager({ busy, setBusy, setProgress, setProgressLabel, setNotice }) {
   const [uploads, setUploads] = useState([]);
@@ -217,20 +273,21 @@ function MenuManager({ busy, setBusy, setProgress, setProgressLabel, setNotice }
     if (!file.type.startsWith("image/")) { setNotice("请选择 JPG 或 PNG 菜单图片；iPhone 的 HEIC 图片请先存为照片或截图后上传"); return; }
     setBusy(true); setProgress(1); setProgressLabel("正在准备菜单图片"); setNotice("正在自动旋转并识别表格小字，请保持页面打开…");
     try {
+      const parser = await import("./menu-parser.js");
       let result = null;
       let cloudMessage = "";
       try {
         setProgress(8); setProgressLabel("正在调用腾讯云表格识别 V3");
-        const imageBase64 = await imageFileToBase64(file);
+        const imageBase64 = await parser.imageFileToBase64(file);
         const cloud = await api("/api/admin/menu-ocr", { method: "POST", body: JSON.stringify({ image_base64: imageBase64 }) });
         if (cloud.configured) {
           setProgress(86);
-          result = parseTencentMenuTables(cloud.table_detections, weekStart);
+          result = parser.parseTencentMenuTables(cloud.table_detections, weekStart);
         } else cloudMessage = "腾讯云 OCR 尚未配置，已自动改用本机基础识别。";
       } catch (error) { cloudMessage = `腾讯云表格识别未成功（${error.message}），已自动改用本机基础识别。`; }
       if (!result) {
         setProgressLabel("正在使用本机中文 OCR 备用识别");
-        result = await parseMenuImage(file, weekStart, setProgress);
+        result = await parser.parseMenuImage(file, weekStart, setProgress);
         result.warnings = [cloudMessage, ...(result.warnings || [])].filter(Boolean);
       }
       const record = await api("/api/admin/menu-uploads", { method: "POST", body: JSON.stringify({ filename: file.name, menu: result.menu, warnings: result.warnings, recognized_lines: result.recognized_lines }) });
@@ -293,6 +350,7 @@ function MenuEditor({ menu, busy, onSave, saveLabel }) {
   const [quickText, setQuickText] = useState("");
   const [quickMessage, setQuickMessage] = useState("");
   useEffect(() => { setDraft(clone(menu)); setDayIndex(0); setMeal("breakfast"); setQuickText(""); setQuickMessage(""); }, [menu]);
+  useEffect(() => { setQuickText(""); setQuickMessage(""); }, [dayIndex, meal]);
   const day = draft.days[dayIndex];
   const categories = MENU_CATEGORIES[meal];
   const changeItems = (category, updater) => { const next = clone(draft); const current = next.days[dayIndex].meals[meal][category] || []; next.days[dayIndex].meals[meal][category] = updater(current); setDraft(next); };
@@ -300,20 +358,19 @@ function MenuEditor({ menu, busy, onSave, saveLabel }) {
   const addItem = (category) => changeItems(category, (items) => [...items, ""]);
   const removeItem = (category, itemIndex) => changeItems(category, (items) => items.filter((_, index) => index !== itemIndex));
   const applyQuickText = () => {
-    const parsed = parseWeeklyMenuText(quickText);
-    if (!parsed.categories) { setQuickMessage("未匹配到菜单，请按“星期几 → 早餐/午餐/晚餐 → 分类 → 菜名”的格式输入"); return; }
+    const parsed = parseQuickMenuText(quickText, meal);
+    if (!parsed.found.length) { setQuickMessage(`未识别到分类，请使用“${categories.join("、")}”作为标题`); return; }
     const next = clone(draft);
-    Object.entries(parsed.patches).forEach(([key, items]) => { const [targetDay, targetMeal, targetCategory] = key.split(":"); next.days[Number(targetDay)].meals[targetMeal][targetCategory] = items; });
-    setDraft(next); setQuickMessage(`已精准匹配 ${parsed.days} 天、${parsed.meals} 个餐次、${parsed.categories} 个分类，共 ${parsed.count} 道菜${parsed.ignored ? `；${parsed.ignored} 行因缺少星期/餐次/分类未填入` : ""}`);
+    parsed.found.forEach((category) => { next.days[dayIndex].meals[meal][category] = parsed.categories[category]; });
+    setDraft(next); setQuickMessage(`已识别 ${parsed.found.length} 个分类、${parsed.count} 道菜${parsed.ignored ? `，忽略 ${parsed.ignored} 行标题前文字` : ""}`);
   };
   const clearMeal = () => { if (!window.confirm(`确定清空${day.weekday}${MENU_LABELS[meal]}的全部菜品吗？`)) return; const next = clone(draft); categories.forEach((category) => { next.days[dayIndex].meals[meal][category] = []; }); setDraft(next); setQuickMessage("当前餐次已清空，保存后生效"); };
   const submit = async () => { const cleaned = clone(draft); cleaned.days.forEach((item) => Object.values(item.meals).forEach((mealData) => Object.keys(mealData).forEach((category) => { mealData[category] = mealData[category].map((dish) => String(dish).trim()).filter(Boolean); }))); setSaving(true); try { await onSave(cleaned); setDraft(cleaned); } finally { setSaving(false); } };
   return <div className="menu-editor">
-    <section className="menu-quick-entry weekly"><div><small>WEEKLY QUICK INPUT</small><h3>整周菜单文字自动匹配</h3><p>一次粘贴星期一至星期日的全部菜单。系统会依据星期、餐次和分类精准填入对应位置，不受当前选中日期影响。</p></div><textarea value={quickText} onChange={(event) => setQuickText(event.target.value)} placeholder={`星期一\n早餐\n热菜：宫保鸡丁、清蒸鱼\n中点：肉包、烧麦\n主食：白粥\n\n午餐\n热菜：红烧排骨、时蔬\n免费汤：紫菜蛋花汤\n主食：米饭\n\n星期二\n早餐\n热菜：炒青菜\n中点：馒头`}/><div className="menu-quick-format"><b>识别格式</b><span>星期一</span><i>→</i><span>早餐</span><i>→</i><span>热菜：</span><i>→</i><span>菜名</span></div><div className="menu-quick-actions"><span>{quickMessage || "支持星期一/周一、早餐/午餐/晚餐；分类标题后可逐行输入或用顿号分隔"}</span><button type="button" disabled={!quickText.trim()} onClick={applyQuickText}>识别整周并填入</button></div></section>
     <div className="menu-day-tabs">{draft.days.map((item, index) => <button key={item.date || index} className={dayIndex === index ? "active" : ""} onClick={() => setDayIndex(index)}><small>{item.weekday?.replace("星期", "周")}</small><strong>{item.date?.slice(5).replace("-", "/")}</strong></button>)}</div>
     <label className="menu-admin-day-select"><span>选择本周日期</span><select value={dayIndex} onChange={(event) => setDayIndex(Number(event.target.value))}>{draft.days.map((item, index) => <option key={item.date || index} value={index}>{item.weekday} · {item.date?.slice(5).replace("-", "月")}日</option>)}</select></label>
     <div className="menu-editor-toolbar"><div className="menu-current-day"><small>当前编辑</small><strong>{day.weekday} · {day.date?.replaceAll("-", ".")}</strong></div><div>{Object.entries(MENU_LABELS).map(([key, label]) => <button key={key} className={meal === key ? "active" : ""} onClick={() => setMeal(key)}>{label}</button>)}</div></div>
-    <div className="menu-current-actions"><span>下方可继续逐项校对当前餐次</span><button type="button" onClick={clearMeal}>清空当前餐次</button></div>
+    <section className="menu-quick-entry"><div><small>QUICK INPUT</small><h3>文字自动分组</h3><p>先写分类标题，再逐行输入菜名；也支持用顿号或逗号分隔。只替换识别到的分类。</p></div><textarea value={quickText} onChange={(event) => setQuickText(event.target.value)} placeholder={`${categories[0]}：\n宫保鸡丁\n清蒸鱼\n\n${categories[1]}：\n请在这里继续输入`}/><div className="menu-quick-actions"><span>{quickMessage || `可识别：${categories.join("、")}`}</span><button type="button" className="clear" onClick={clearMeal}>清空当前餐次</button><button type="button" disabled={!quickText.trim()} onClick={applyQuickText}>自动识别并填入</button></div></section>
     <div className="menu-category-editor">{categories.map((category, index) => { const items = day.meals?.[meal]?.[category] || []; return <article key={category} className={index % 2 ? "alternate" : ""}><header><span><i>{String(index + 1).padStart(2, "0")}</i><strong>{category}</strong></span><button type="button" onClick={() => addItem(category)}>＋ 添加菜品</button></header>{items.length ? <div className="menu-item-input-grid">{items.map((item, itemIndex) => <label key={`${category}-${itemIndex}`}><span>{String(itemIndex + 1).padStart(2, "0")}</span><input value={item} onChange={(event) => updateItem(category, itemIndex, event.target.value)} placeholder="输入菜名"/><button type="button" aria-label={`删除${item || "菜品"}`} onClick={() => removeItem(category, itemIndex)}><X/></button></label>)}</div> : <button type="button" className="menu-no-item" onClick={() => addItem(category)}>本分类暂无菜品，点击添加</button>}</article>; })}</div>
     <button className="menu-save" disabled={busy || saving} onClick={submit}>{saving ? "正在保存…" : saveLabel}</button>
   </div>;
