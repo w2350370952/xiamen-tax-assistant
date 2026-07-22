@@ -64,7 +64,8 @@ function normalizeState(raw) {
     menus: {
       current: state.menus?.current ? sanitizeMenu(state.menus.current) : null,
       version: state.menus?.version || defaultVersion("暂无已发布菜单"),
-      uploads: Array.isArray(state.menus?.uploads) ? state.menus.uploads.map((upload) => ({ ...upload, menu: sanitizeMenu(upload.menu) })) : [],
+      uploads: Array.isArray(state.menus?.uploads) ? state.menus.uploads.map((upload) => ({ ...upload, menu: sanitizeMenu(upload.menu), source_menu: upload.source_menu ? sanitizeMenu(upload.source_menu) : null })) : [],
+      dictionary: sanitizeDishDictionary(state.menus?.dictionary, state.menus?.current),
     },
   };
 }
@@ -267,6 +268,68 @@ function sanitizeMenu(input) {
   return { week_start: text(source.week_start, 10), days };
 }
 
+function normalizedDishName(value) {
+  return text(value, 100).toLowerCase().replace(/[\s·•,，。；;：:、\/\\()（）【】\[\]“”"'‘’+-]/g, "");
+}
+
+function sanitizeDishDictionary(raw, currentMenu = null) {
+  const entries = Array.isArray(raw) ? raw.slice(0, 1200).map((entry) => ({
+    name: text(entry?.name, 100),
+    meal: ["breakfast", "lunch", "dinner"].includes(entry?.meal) ? entry.meal : "lunch",
+    category: text(entry?.category, 30),
+    aliases: Array.isArray(entry?.aliases) ? [...new Set(entry.aliases.slice(0, 30).map((item) => text(item, 100)).filter(Boolean))] : [],
+    uses: Math.max(1, Number(entry?.uses) || 1),
+    updated_at: text(entry?.updated_at, 30) || null,
+  })).filter((entry) => entry.name && MENU_MEALS[entry.meal]?.includes(entry.category)) : [];
+  if (currentMenu) ensureMenuDishes(entries, sanitizeMenu(currentMenu), false);
+  return entries.slice(0, 1200);
+}
+
+function dictionaryEntry(dictionary, name, meal, category) {
+  const normalized = normalizedDishName(name);
+  return dictionary.find((entry) => entry.meal === meal && entry.category === category && normalizedDishName(entry.name) === normalized);
+}
+
+function ensureMenuDishes(dictionary, menu, increaseUses = true) {
+  for (const day of menu?.days || []) for (const [meal, categories] of Object.entries(day.meals || {})) for (const [category, items] of Object.entries(categories || {})) for (const rawName of items || []) {
+    const name = text(rawName, 100); if (!name || /无法识别|看不清|未识别/.test(name)) continue;
+    const existing = dictionaryEntry(dictionary, name, meal, category);
+    if (existing) { if (increaseUses) existing.uses = Math.min(9999, existing.uses + 1); existing.updated_at = new Date().toISOString(); }
+    else dictionary.push({ name, meal, category, aliases: [], uses: 1, updated_at: new Date().toISOString() });
+  }
+  dictionary.sort((a, b) => b.uses - a.uses || a.name.localeCompare(b.name, "zh-CN"));
+  if (dictionary.length > 1200) dictionary.length = 1200;
+  return dictionary;
+}
+
+function addCorrectionAliases(dictionary, sourceMenu, confirmedMenu) {
+  if (!sourceMenu || !confirmedMenu) return;
+  for (let dayIndex = 0; dayIndex < 7; dayIndex += 1) for (const [meal, categories] of Object.entries(MENU_MEALS)) for (const category of categories) {
+    const sourceItems = sourceMenu.days?.[dayIndex]?.meals?.[meal]?.[category] || [];
+    const confirmedItems = confirmedMenu.days?.[dayIndex]?.meals?.[meal]?.[category] || [];
+    if (sourceItems.length !== confirmedItems.length) continue;
+    for (let index = 0; index < confirmedItems.length; index += 1) {
+      const source = text(sourceItems[index], 100), confirmed = text(confirmedItems[index], 100);
+      if (!source || !confirmed || normalizedDishName(source) === normalizedDishName(confirmed) || /无法识别|看不清|未识别/.test(source)) continue;
+      const entry = dictionaryEntry(dictionary, confirmed, meal, category);
+      if (entry && !entry.aliases.some((alias) => normalizedDishName(alias) === normalizedDishName(source))) entry.aliases.push(source);
+    }
+  }
+}
+
+function applyKnownDishAliases(menu, dictionary) {
+  const corrected = sanitizeMenu(menu); let corrections = 0;
+  for (const day of corrected.days) for (const [meal, categories] of Object.entries(day.meals)) for (const [category, items] of Object.entries(categories)) {
+    categories[category] = items.map((item) => {
+      const normalized = normalizedDishName(item);
+      const match = dictionary.find((entry) => entry.meal === meal && entry.category === category && (normalizedDishName(entry.name) === normalized || entry.aliases.some((alias) => normalizedDishName(alias) === normalized)));
+      if (match && match.name !== item) { corrections += 1; return match.name; }
+      return item;
+    });
+  }
+  return { menu: corrected, corrections };
+}
+
 function validMenu(menu) {
   return /^20\d{2}-\d{2}-\d{2}$/.test(menu.week_start) && menu.days.length === 7 && menu.days.every((day) => /^20\d{2}-\d{2}-\d{2}$/.test(day.date));
 }
@@ -315,7 +378,7 @@ async function adminRoutes(request, url, path) {
 
   if (path === "/api/admin/menu" && request.method === "GET") {
     const state = await readState();
-    return json({ menu: state.menus.current ? sanitizeMenu(state.menus.current) : null, version: state.menus.version });
+    return json({ menu: state.menus.current ? sanitizeMenu(state.menus.current) : null, version: state.menus.version, dictionary: state.menus.dictionary });
   }
 
   if (path === "/api/admin/menu-ocr" && request.method === "POST") {
@@ -332,6 +395,7 @@ async function adminRoutes(request, url, path) {
     if (!validMenu(menu)) return fail("菜单所属周和七天日期不完整");
     const state = await readState();
     state.menus.current = menu;
+    ensureMenuDishes(state.menus.dictionary, menu, true);
     state.menus.version = { label: nextVersion(state.menus.version?.label), updated_at: new Date().toISOString(), remark: "管理员修改已发布菜单" };
     await writeState(state);
     return json({ menu, version: state.menus.version });
@@ -344,8 +408,10 @@ async function adminRoutes(request, url, path) {
 
   if (path === "/api/admin/menu-uploads" && request.method === "POST") {
     const body = await bodyJson(request);
-    const menu = sanitizeMenu(body.menu);
-    if (!validMenu(menu)) return fail("菜单所属周和七天日期不完整");
+    const sourceMenu = sanitizeMenu(body.menu);
+    if (!validMenu(sourceMenu)) return fail("菜单所属周和七天日期不完整");
+    const state = await readState();
+    const matched = applyKnownDishAliases(sourceMenu, state.menus.dictionary);
     const upload = {
       id: randomUUID(),
       filename: text(body.filename, 220) || "一周菜单图片",
@@ -353,9 +419,10 @@ async function adminRoutes(request, url, path) {
       status: "review",
       warnings: Array.isArray(body.warnings) ? body.warnings.slice(0, 20).map((item) => text(item, 300)) : [],
       recognized_lines: Math.max(0, Number(body.recognized_lines) || 0),
-      menu,
+      menu: matched.menu,
+      source_menu: sourceMenu,
+      dictionary_corrections: matched.corrections,
     };
-    const state = await readState();
     state.menus.uploads = [upload, ...state.menus.uploads].slice(0, 12);
     await writeState(state);
     return json({ upload }, 201);
@@ -369,7 +436,12 @@ async function adminRoutes(request, url, path) {
     const state = await readState();
     const upload = state.menus.uploads.find((item) => item.id === uploadId);
     if (!upload) return fail("未找到菜单上传记录", 404);
-    upload.menu = menu;
+    if (body.capture_source) {
+      upload.source_menu = menu;
+      const matched = applyKnownDishAliases(menu, state.menus.dictionary);
+      upload.menu = matched.menu;
+      upload.dictionary_corrections = matched.corrections;
+    } else upload.menu = menu;
     upload.status = "review";
     await writeState(state);
     return json({ upload });
@@ -394,6 +466,8 @@ async function adminRoutes(request, url, path) {
     if (!validMenu(menu)) return fail("菜单信息不完整，无法发布");
     const now = new Date().toISOString();
     state.menus.current = menu;
+    ensureMenuDishes(state.menus.dictionary, menu, true);
+    addCorrectionAliases(state.menus.dictionary, upload.source_menu, menu);
     state.menus.version = { label: nextVersion(state.menus.version?.label), updated_at: now, remark: `来自 ${upload.filename}` };
     upload.status = "published";
     upload.published_at = now;
