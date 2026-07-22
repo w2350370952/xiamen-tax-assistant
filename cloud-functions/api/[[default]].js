@@ -8,6 +8,11 @@ const ADMIN_USER = "xnaitax2025";
 const ADMIN_PASSWORD_SHA256 = "3d4a6df67e692969e3092a220365c136d761097075b504bea76c0b2858a22bb5";
 const SESSION_SECONDS = 60 * 60 * 12;
 const MAJOR_KEYS = ["tax", "accounting", "audit", "finance"];
+const MENU_MEALS = {
+  breakfast: ["小菜", "热菜", "中点", "主食", "西点", "饮料"],
+  lunch: ["热菜", "炖罐汤", "快汤", "主食", "面档", "佐品", "煎扒档", "水果/饮料"],
+  dinner: ["热菜", "炖罐汤", "主食", "面档", "煎扒档", "水果"],
+};
 
 const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), {
   status,
@@ -49,6 +54,11 @@ function normalizeState(raw) {
   return {
     majors,
     uploads: (state.uploads || []).map((upload) => ({ ...upload, major: majorKey(upload.major) })),
+    menus: {
+      current: state.menus?.current || null,
+      version: state.menus?.version || defaultVersion("暂无已发布菜单"),
+      uploads: Array.isArray(state.menus?.uploads) ? state.menus.uploads : [],
+    },
   };
 }
 
@@ -103,6 +113,30 @@ function validCourse(course) {
   return /^20\d{2}-\d{2}-\d{2}$/.test(course.date) && course.course_name && course.weekday && course.period && /^\d{2}:\d{2}$/.test(course.start_time) && /^\d{2}:\d{2}$/.test(course.end_time);
 }
 
+function sanitizeMenu(input) {
+  const source = input || {};
+  const days = Array.isArray(source.days) ? source.days.slice(0, 7).map((day, dayIndex) => {
+    const meals = {};
+    for (const [meal, categories] of Object.entries(MENU_MEALS)) {
+      meals[meal] = {};
+      for (const category of categories) {
+        const items = Array.isArray(day?.meals?.[meal]?.[category]) ? day.meals[meal][category] : [];
+        meals[meal][category] = items.slice(0, 40).map((item) => text(item, 100)).filter(Boolean);
+      }
+    }
+    return {
+      date: text(day?.date, 10),
+      weekday: text(day?.weekday, 4) || ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"][dayIndex],
+      meals,
+    };
+  }) : [];
+  return { week_start: text(source.week_start, 10), days };
+}
+
+function validMenu(menu) {
+  return /^20\d{2}-\d{2}-\d{2}$/.test(menu.week_start) && menu.days.length === 7 && menu.days.every((day) => /^20\d{2}-\d{2}-\d{2}$/.test(day.date));
+}
+
 function nextVersion(label) {
   const match = String(label || "v1.0").match(/^v?(\d+)\.(\d+)$/);
   return match ? `v${match[1]}.${Number(match[2]) + 1}` : "v1.1";
@@ -142,6 +176,86 @@ async function adminRoutes(request, url, path) {
     const state = await readState();
     const major = majorKey(url.searchParams.get("major"));
     return json({ major, courses: state.majors[major].courses, version: state.majors[major].version });
+  }
+
+  if (path === "/api/admin/menu" && request.method === "GET") {
+    const state = await readState();
+    return json({ menu: state.menus.current ? sanitizeMenu(state.menus.current) : null, version: state.menus.version });
+  }
+
+  if (path === "/api/admin/menu" && request.method === "PATCH") {
+    const body = await bodyJson(request);
+    const menu = sanitizeMenu(body.menu);
+    if (!validMenu(menu)) return fail("菜单所属周和七天日期不完整");
+    const state = await readState();
+    state.menus.current = menu;
+    state.menus.version = { label: nextVersion(state.menus.version?.label), updated_at: new Date().toISOString(), remark: "管理员修改已发布菜单" };
+    await writeState(state);
+    return json({ menu, version: state.menus.version });
+  }
+
+  if (path === "/api/admin/menu-uploads" && request.method === "GET") {
+    const state = await readState();
+    return json({ uploads: state.menus.uploads });
+  }
+
+  if (path === "/api/admin/menu-uploads" && request.method === "POST") {
+    const body = await bodyJson(request);
+    const menu = sanitizeMenu(body.menu);
+    if (!validMenu(menu)) return fail("菜单所属周和七天日期不完整");
+    const upload = {
+      id: randomUUID(),
+      filename: text(body.filename, 220) || "一周菜单图片",
+      uploaded_at: new Date().toISOString(),
+      status: "review",
+      warnings: Array.isArray(body.warnings) ? body.warnings.slice(0, 20).map((item) => text(item, 300)) : [],
+      recognized_lines: Math.max(0, Number(body.recognized_lines) || 0),
+      menu,
+    };
+    const state = await readState();
+    state.menus.uploads = [upload, ...state.menus.uploads].slice(0, 12);
+    await writeState(state);
+    return json({ upload }, 201);
+  }
+
+  if (path.startsWith("/api/admin/menu-uploads/") && request.method === "PATCH") {
+    const uploadId = decodeURIComponent(path.slice("/api/admin/menu-uploads/".length));
+    const body = await bodyJson(request);
+    const menu = sanitizeMenu(body.menu);
+    if (!validMenu(menu)) return fail("菜单所属周和七天日期不完整");
+    const state = await readState();
+    const upload = state.menus.uploads.find((item) => item.id === uploadId);
+    if (!upload) return fail("未找到菜单上传记录", 404);
+    upload.menu = menu;
+    upload.status = "review";
+    await writeState(state);
+    return json({ upload });
+  }
+
+  if (path.startsWith("/api/admin/menu-uploads/") && request.method === "DELETE") {
+    const uploadId = decodeURIComponent(path.slice("/api/admin/menu-uploads/".length));
+    const state = await readState();
+    const before = state.menus.uploads.length;
+    state.menus.uploads = state.menus.uploads.filter((item) => item.id !== uploadId);
+    if (before === state.menus.uploads.length) return fail("未找到菜单上传记录", 404);
+    await writeState(state);
+    return json({ ok: true });
+  }
+
+  if (path === "/api/admin/menu-publish" && request.method === "POST") {
+    const body = await bodyJson(request);
+    const state = await readState();
+    const upload = state.menus.uploads.find((item) => item.id === body.upload_id);
+    if (!upload) return fail("未找到菜单上传记录", 404);
+    const menu = sanitizeMenu(upload.menu);
+    if (!validMenu(menu)) return fail("菜单信息不完整，无法发布");
+    const now = new Date().toISOString();
+    state.menus.current = menu;
+    state.menus.version = { label: nextVersion(state.menus.version?.label), updated_at: now, remark: `来自 ${upload.filename}` };
+    upload.status = "published";
+    upload.published_at = now;
+    await writeState(state);
+    return json({ ok: true, version: state.menus.version });
   }
 
   if (path.startsWith("/api/admin/courses/") && request.method === "PATCH") {
@@ -265,6 +379,10 @@ export async function onRequest({ request }) {
       const pathMajor = path.startsWith("/api/live-courses/") ? decodeURIComponent(path.slice("/api/live-courses/".length)) : null;
       const major = majorKey(pathMajor || url.searchParams.get("major"));
       return json({ major, courses: state.majors[major].courses, version: state.majors[major].version }, 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
+    }
+    if (path === "/api/live-menu" && request.method === "GET") {
+      const state = await readState();
+      return json({ menu: state.menus.current ? sanitizeMenu(state.menus.current) : null, version: state.menus.version }, 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
     }
     if (path.startsWith("/api/admin/")) return await adminRoutes(request, url, path);
     return fail("接口不存在", 404);
