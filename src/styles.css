@@ -1381,7 +1381,7 @@ header p {
     z-index: 30;
     height: 64px;
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     padding: 7px;
     border: 1px solid rgba(222, 227, 234, 0.8);
     border-radius: 20px;
@@ -1404,6 +1404,346 @@ header p {
   .bottom button.active {
     color: var(--blue);
     background: #edf3ff;
+  }
+}
+
+.menu-page {
+  --menu-green: #26785a;
+  --menu-green-soft: #eaf6ef;
+  --menu-warm: #fffaf1;
+}
+.menu-date-nav {
+  display: flex;
+  gap: 8px;
+  position: relative;
+}
+.menu-date-nav button {
+  min-width: 46px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid #dce4e0;
+  border-radius: 13px;
+  color: #546a60;
+  background: #fff;
+}
+.menu-date-nav button:nth-child(2) {
+  min-width: 98px;
+  font-weight: 750;
+}
+.menu-date-nav svg {
+  width: 18px;
+}
+.menu-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 16px;
+  padding: 23px 25px;
+  overflow: hidden;
+  border: 1px solid #dce9e1;
+  border-radius: 20px;
+  color: #17382b;
+  background: radial-gradient(circle at 85% -20%, #cde9d8 0, transparent 37%), linear-gradient(135deg, #f9fdfb, #edf8f1);
+  box-shadow: 0 15px 40px rgba(31, 88, 62, 0.07);
+}
+.menu-banner > div {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.menu-banner > div > span {
+  width: 56px;
+  height: 56px;
+  flex: 0 0 56px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  color: #fff;
+  background: linear-gradient(145deg, #318568, #1e6249);
+  box-shadow: 0 10px 22px rgba(38, 120, 90, 0.22);
+}
+.menu-banner h2 {
+  margin: 3px 0 5px;
+  font-size: 23px;
+}
+.menu-banner small {
+  color: #438069;
+  font-weight: 800;
+}
+.menu-banner p {
+  margin: 0;
+  color: #6d8379;
+  font-size: 12px;
+}
+.menu-banner aside {
+  min-width: 92px;
+  padding-left: 22px;
+  border-left: 1px solid #cee0d6;
+  text-align: right;
+}
+.menu-banner aside small,
+.menu-banner aside strong {
+  display: block;
+}
+.menu-banner aside small {
+  color: #789087;
+  font-size: 10px;
+}
+.menu-banner aside strong {
+  margin-top: 4px;
+  color: #26785a;
+  font-size: 19px;
+}
+.meal-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.meal-tabs button {
+  position: relative;
+  min-height: 78px;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 14px 17px;
+  border: 1px solid #e0e6e3;
+  border-radius: 16px;
+  color: #718179;
+  background: #fff;
+  text-align: left;
+  transition: transform .18s, border-color .18s, background .18s;
+}
+.meal-tabs button:hover {
+  transform: translateY(-2px);
+}
+.meal-tabs button > svg {
+  width: 24px;
+  height: 24px;
+}
+.meal-tabs button > span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.meal-tabs strong {
+  color: #30483d;
+  font-size: 15px;
+}
+.meal-tabs small {
+  color: #93a29b;
+  font-size: 10px;
+}
+.meal-tabs button.active {
+  border-color: #7bb397;
+  color: var(--menu-green);
+  background: var(--menu-green-soft);
+  box-shadow: 0 8px 24px rgba(38, 120, 90, 0.09);
+}
+.meal-tabs button.active strong {
+  color: #1f684d;
+}
+.meal-tabs em {
+  position: absolute;
+  top: 9px;
+  right: 10px;
+  padding: 3px 7px;
+  border-radius: 30px;
+  color: #fff;
+  background: #2d8060;
+  font-size: 9px;
+  font-style: normal;
+}
+.menu-sheet {
+  overflow: hidden;
+  border: 1px solid #e2e6e3;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 14px 40px rgba(24, 55, 42, 0.06);
+}
+.menu-sheet-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 22px 25px 18px;
+  border-bottom: 1px solid #e7ebe8;
+}
+.menu-sheet-head small {
+  color: #2d8060;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 1.7px;
+}
+.menu-sheet-head h2 {
+  margin: 5px 0 0;
+  color: #243e32;
+  font-size: 21px;
+}
+.menu-sheet-head > span {
+  padding: 5px 10px;
+  border-radius: 20px;
+  color: #60766c;
+  background: #eef4f0;
+  font-size: 11px;
+}
+.menu-category-list article {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  min-height: 78px;
+  padding: 18px 25px;
+  border-bottom: 1px solid #edf0ee;
+}
+.menu-category-list article.alternate {
+  background: #fafbf9;
+}
+.menu-category-list article > div {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+.menu-category-list article i {
+  color: #a5b3ac;
+  font-size: 10px;
+  font-style: normal;
+}
+.menu-category-list article strong {
+  color: #365346;
+  font-size: 14px;
+}
+.menu-category-list ul {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.menu-category-list li {
+  padding: 7px 11px;
+  border: 1px solid #e1e8e4;
+  border-radius: 9px;
+  color: #263d33;
+  background: #fff;
+  font-size: 13px;
+}
+.menu-sheet footer {
+  padding: 13px 25px;
+  color: #96a39d;
+  background: var(--menu-warm);
+  font-size: 10px;
+  text-align: center;
+}
+.menu-empty {
+  min-height: 330px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  padding: 45px 20px;
+  border: 1px dashed #d8e2dc;
+  border-radius: 20px;
+  color: #91a198;
+  background: #fff;
+  text-align: center;
+}
+.menu-empty > svg {
+  width: 35px;
+  height: 35px;
+  color: #8fb6a1;
+}
+.menu-empty h2 {
+  margin: 15px 0 6px;
+  color: #42584e;
+  font-size: 19px;
+}
+.menu-empty p {
+  max-width: 430px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+@media (max-width: 650px) {
+  .menu-page header {
+    gap: 16px;
+  }
+  .menu-date-nav {
+    width: 100%;
+    align-self: stretch;
+  }
+  .menu-date-nav button:nth-child(2) {
+    flex: 1;
+  }
+  .menu-banner {
+    padding: 17px;
+    border-radius: 17px;
+  }
+  .menu-banner > div {
+    gap: 11px;
+  }
+  .menu-banner > div > span {
+    width: 46px;
+    height: 46px;
+    flex-basis: 46px;
+    border-radius: 14px;
+  }
+  .menu-banner h2 {
+    font-size: 18px;
+  }
+  .menu-banner p {
+    max-width: 190px;
+    line-height: 1.45;
+  }
+  .menu-banner aside {
+    display: none;
+  }
+  .meal-tabs {
+    gap: 6px;
+  }
+  .meal-tabs button {
+    min-height: 70px;
+    justify-content: center;
+    gap: 7px;
+    padding: 10px 6px;
+    border-radius: 13px;
+  }
+  .meal-tabs button > svg {
+    width: 20px;
+  }
+  .meal-tabs small {
+    display: none;
+  }
+  .meal-tabs em {
+    top: 5px;
+    right: 5px;
+    padding: 2px 5px;
+  }
+  .menu-sheet {
+    border-radius: 17px;
+  }
+  .menu-sheet-head {
+    padding: 18px;
+  }
+  .menu-category-list article {
+    grid-template-columns: 92px 1fr;
+    gap: 6px;
+    padding: 15px 13px;
+  }
+  .menu-category-list article > div {
+    gap: 7px;
+  }
+  .menu-category-list ul {
+    gap: 6px;
+  }
+  .menu-category-list li {
+    padding: 6px 8px;
+    font-size: 12px;
   }
 }
 @media (max-width: 650px) {
