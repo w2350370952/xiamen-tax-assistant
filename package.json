@@ -10,11 +10,13 @@
   },
   "dependencies": {
     "@edgeone/pages-blob": "^0.0.14",
+    "@tesseract.js-data/chi_sim": "^1.0.0",
     "@vitejs/plugin-react": "latest",
     "lucide-react": "latest",
     "pdfjs-dist": "^6.1.200",
     "react": "latest",
     "react-dom": "latest",
+    "tesseract.js": "^7.0.0",
     "vite": "latest"
   }
 }
