@@ -15,6 +15,12 @@ async function api(path, options = {}) {
   return data;
 }
 
+function notifyStudentMenuUpdated(version) {
+  const value = `${version?.label || "updated"}-${Date.now()}`;
+  try { localStorage.setItem("xnai_menu_updated", value); } catch {}
+  try { window.opener?.postMessage({ type: "xnai-menu-updated", version: version?.label }, window.location.origin); } catch {}
+}
+
 export default function AdminApp() {
   const [session, setSession] = useState(null);
   const [uploads, setUploads] = useState([]);
@@ -383,14 +389,14 @@ function MenuManager({ busy, setBusy, setProgress, setProgressLabel, setNotice }
   };
   const saveLive = async (menu) => {
     setBusy(true);
-    try { const data = await api("/api/admin/menu", { method: "PATCH", body: JSON.stringify({ menu }) }); await load(); setNotice(`学生端菜单已更新，当前版本 ${data.version.label}`); }
+    try { const data = await api("/api/admin/menu", { method: "PATCH", body: JSON.stringify({ menu }) }); notifyStudentMenuUpdated(data.version); await load(); setNotice(`学生端菜单已更新，当前版本 ${data.version.label}；已通知打开中的学生页面刷新`); }
     catch (error) { setNotice(error.message); throw error; }
     finally { setBusy(false); }
   };
   const publish = async () => {
     if (!active || !window.confirm(`确认发布“${active.filename}”识别出的菜单？发布后学生端立即更新。`)) return;
     setBusy(true);
-    try { const data = await api("/api/admin/menu-publish", { method: "POST", body: JSON.stringify({ upload_id: active.id }) }); await load(); setMode("live"); setNotice(`菜单发布成功，当前版本 ${data.version.label}`); }
+    try { const data = await api("/api/admin/menu-publish", { method: "POST", body: JSON.stringify({ upload_id: active.id }) }); notifyStudentMenuUpdated(data.version); await load(); setMode("live"); setNotice(`菜单发布成功，当前版本 ${data.version.label}；学生端会立即刷新`); }
     catch (error) { setNotice(error.message); }
     finally { setBusy(false); }
   };
