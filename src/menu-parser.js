@@ -57,7 +57,7 @@ function cleanText(value) {
 }
 
 function ignoredText(value) {
-  return !value || value.length < 2 || /星期[一二三四五六日]|研究生|餐厅|菜[单谱]|20\d{2}年|早餐|午餐|晚餐|送餐|D厅/.test(value);
+  return !value || value.length < 2 || /星期[一二三四五六日]|研究生|餐厅|菜[单谱]|20\d{2}年|早餐|午餐|晚餐|送餐|D厅|^(小菜|热菜|中点|主食|西点|饮料|炖罐汤|快汤|面档|佐品|煎扒档|水果)$/.test(value);
 }
 
 function flattenLines(blocks = []) {
@@ -139,7 +139,7 @@ export async function parseMenuImage(file, weekStart, onProgress = () => {}) {
     const days = Array.from({ length: 7 }, (_, index) => ({ date: iso(addDays(monday, index)), weekday: WEEKDAYS[index], meals: emptyMeals() }));
     const width = canvas.width;
     const height = canvas.height;
-    const dayStart = width * 0.06;
+    const dayStart = width * 0.082;
     const dayEnd = width * 0.985;
     const dayWidth = (dayEnd - dayStart) / 7;
     let accepted = 0;
@@ -176,3 +176,99 @@ export async function parseMenuImage(file, weekStart, onProgress = () => {}) {
 }
 
 export const menuMealLabels = { breakfast: "早餐", lunch: "午餐", dinner: "晚餐" };
+
+const CATEGORY_NAMES = [...new Set(Object.values(MEAL_LAYOUT).flatMap((meal) => meal.categories.map(([, , category]) => category)))];
+
+function matchedCategory(value) {
+  const text = cleanText(value).replace(/\//g, "");
+  return CATEGORY_NAMES.find((category) => text.includes(category.replace(/\//g, ""))) || (text.includes("水果") || text.includes("果盘") ? "水果" : null);
+}
+
+function tableTop(table) {
+  return Math.min(...(table.TableCoordPoint || []).map((point) => Number(point.Y || 0)), Number.MAX_SAFE_INTEGER);
+}
+
+function cellText(cell) {
+  return cleanText(cell?.Text).replace(/[“”'‘’]+/g, "");
+}
+
+function cellCenterRow(cell) {
+  return (Number(cell.RowTl || 0) + Number(cell.RowBr || cell.RowTl || 0)) / 2;
+}
+
+function cellOverlapsColumn(cell, column) {
+  const start = Number(cell.ColTl || 0), end = Number(cell.ColBr ?? start);
+  return column >= start && column <= end;
+}
+
+function detectMeal(cells, fallbackIndex) {
+  const allText = cells.map((cell) => cellText(cell)).join("");
+  if (allText.includes("早餐")) return "breakfast";
+  if (allText.includes("午餐")) return "lunch";
+  if (allText.includes("晚餐") || allText.includes("晚饭")) return "dinner";
+  return ["breakfast", "lunch", "dinner"][fallbackIndex] || null;
+}
+
+function nearestCategory(cell, categoryCells, meal) {
+  const row = cellCenterRow(cell);
+  const containing = categoryCells.filter((entry) => row >= Number(entry.cell.RowTl || 0) - 0.2 && row <= Number(entry.cell.RowBr ?? (entry.cell.RowTl || 0)) + 0.2);
+  if (containing.length) return containing.sort((a, b) => Math.abs(cellCenterRow(a.cell) - row) - Math.abs(cellCenterRow(b.cell) - row))[0].category;
+  const previous = categoryCells.filter((entry) => Number(entry.cell.RowTl || 0) <= row).sort((a, b) => Number(b.cell.RowTl || 0) - Number(a.cell.RowTl || 0))[0];
+  const category = previous?.category;
+  return Object.prototype.hasOwnProperty.call(emptyMeals()[meal], category) ? category : null;
+}
+
+export function parseTencentMenuTables(tableDetections, weekStart) {
+  if (!Array.isArray(tableDetections) || !tableDetections.length) throw new Error("腾讯云没有检测到表格，请重新正对菜单拍摄");
+  const monday = new Date(`${weekStart}T12:00:00`);
+  const days = Array.from({ length: 7 }, (_, index) => ({ date: iso(addDays(monday, index)), weekday: WEEKDAYS[index], meals: emptyMeals() }));
+  const tables = [...tableDetections].filter((table) => Array.isArray(table.Cells) && table.Cells.length).sort((a, b) => tableTop(a) - tableTop(b));
+  let accepted = 0, lowConfidence = 0, mealIndex = 0;
+
+  for (const table of tables) {
+    const cells = table.Cells || [];
+    const headers = cells.map((cell) => {
+      const match = cellText(cell).match(/星期\s*([一二三四五六日])/);
+      const index = match ? "一二三四五六日".indexOf(match[1]) : -1;
+      return index >= 0 ? { index, column: Number(cell.ColTl || 0), cell } : null;
+    }).filter(Boolean).sort((a, b) => a.index - b.index);
+    if (headers.length < 5) continue;
+    const meal = detectMeal(cells, mealIndex);
+    if (!meal) continue;
+    mealIndex += 1;
+    const columns = Array.from({ length: 7 }, (_, index) => headers.find((header) => header.index === index)?.column ?? null);
+    if (columns.some((column) => column === null)) {
+      const known = headers.map((header) => header.column).sort((a, b) => a - b);
+      const start = known[0], step = known.length > 1 ? (known[known.length - 1] - start) / 6 : 1;
+      for (let index = 0; index < 7; index += 1) if (columns[index] === null) columns[index] = Math.round(start + step * index);
+    }
+    const firstDayColumn = Math.min(...columns);
+    const categoryCells = cells.map((cell) => ({ cell, category: matchedCategory(cell.Text) })).filter((entry) => entry.category && Number(entry.cell.ColTl || 0) < firstDayColumn);
+
+    for (const cell of cells) {
+      const text = cellText(cell);
+      if (ignoredText(text) || matchedCategory(text) || Number(cell.ColBr ?? (cell.ColTl || 0)) < firstDayColumn) continue;
+      const category = nearestCategory(cell, categoryCells, meal);
+      if (!category || !Object.prototype.hasOwnProperty.call(days[0].meals[meal], category)) continue;
+      const targets = columns.map((column, index) => cellOverlapsColumn(cell, column) ? index : -1).filter((index) => index >= 0);
+      if (!targets.length) continue;
+      const items = String(cell.Text || "").split(/\n|、|；|;/).map(cleanText).filter((item) => !ignoredText(item) && !matchedCategory(item));
+      if (!items.length) continue;
+      if (Number(cell.Confidence || 0) < 70) lowConfidence += items.length;
+      for (const dayIndex of targets) {
+        const bucket = days[dayIndex].meals[meal][category];
+        for (const item of items) if (!bucket.includes(item)) bucket.push(item);
+      }
+      accepted += items.length;
+    }
+  }
+  if (accepted < 20) throw new Error("腾讯云已识别图片，但没有成功还原星期与餐次结构，请上传更清晰、完整的菜单照片");
+  const warnings = [`已使用腾讯云表格识别 V3 提取 ${accepted} 道菜品，请重点检查标记为低置信度的文字。`];
+  if (lowConfidence) warnings.push(`其中约 ${lowConfidence} 道菜品识别置信度偏低，建议对照原图校对。`);
+  return { menu: { week_start: weekStart, days }, warnings, recognized_lines: accepted, engine: "tencent-table-v3" };
+}
+
+export async function imageFileToBase64(file) {
+  const canvas = await normalizeImage(file);
+  return canvas.toDataURL("image/jpeg", 0.86).split(",")[1] || "";
+}
