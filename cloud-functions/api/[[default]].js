@@ -4,6 +4,7 @@ import { getStore } from "@edgeone/pages-blob";
 const store = getStore("xiamen-tax-assistant");
 const STATE_KEY = "course-state.json";
 const ANALYTICS_KEY = "anonymous-analytics-v1.json";
+const MENU_RATINGS_KEY = "menu-ratings-v1.json";
 const COOKIE = "xnai_admin";
 const ADMIN_USER = "xnaitax2025";
 const ADMIN_PASSWORD_SHA256 = "3d4a6df67e692969e3092a220365c136d761097075b504bea76c0b2858a22bb5";
@@ -80,6 +81,15 @@ async function readState() {
 
 async function writeState(state) {
   await store.setJSON(STATE_KEY, state, { cacheControl: "no-store" });
+}
+
+async function readMenuRatings(fallback = {}) {
+  const stored = await store.get(MENU_RATINGS_KEY, { type: "json", consistency: "strong" });
+  return sanitizeMenuRatings(stored || fallback);
+}
+
+async function writeMenuRatings(ratings) {
+  await store.setJSON(MENU_RATINGS_KEY, ratings, { cacheControl: "no-store" });
 }
 
 function beijingDateHour(value = new Date()) {
@@ -400,14 +410,15 @@ async function voteMenuDish(request) {
   const state = await readState(), menu = state.menus.current ? sanitizeMenu(state.menus.current) : null;
   const exists = menu?.days?.some((day) => (day.meals?.[meal]?.[category] || []).some((item) => normalizedDishName(item) === normalizedDishName(dish)));
   if (!exists) return fail("当前已发布菜单中没有这道菜", 404);
+  const ratings = await readMenuRatings(state.menus.ratings);
   const canonical = canonicalDish(state.menus.dictionary, dish, meal, category);
   const name = canonical?.name || dish, storedMeal = dictionaryMeal(meal, category), key = menuRatingKey(name, storedMeal, category);
-  const rating = state.menus.ratings[key] || { name, meal: storedMeal, category, voters: {}, likes: 0, dislikes: 0 };
+  const rating = ratings[key] || { name, meal: storedMeal, category, voters: {}, likes: 0, dislikes: 0 };
   const voter = sha256(visitorId).slice(0, 32), previous = rating.voters[voter] || null;
   if (previous === vote) delete rating.voters[voter]; else rating.voters[voter] = vote;
   const votes = Object.values(rating.voters); rating.likes = votes.filter((item) => item === "like").length; rating.dislikes = votes.filter((item) => item === "dislike").length;
-  state.menus.ratings[key] = rating;
-  await writeState(state);
+  ratings[key] = rating;
+  await writeMenuRatings(ratings);
   return json({ key: menuRatingKey(dish, meal, category), rating: { likes: rating.likes, dislikes: rating.dislikes }, user_vote: previous === vote ? null : vote });
 }
 
@@ -729,7 +740,14 @@ export async function onRequest({ request }) {
     if (path === "/api/live-menu" && request.method === "GET") {
       const state = await readState();
       const menu = state.menus.current ? sanitizeMenu(state.menus.current) : null;
-      return json({ menu, version: state.menus.version, ratings: publicRatingsForMenu(menu, state.menus.dictionary, state.menus.ratings) }, 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
+      const ratings = await readMenuRatings(state.menus.ratings);
+      return json({ menu, version: state.menus.version, ratings: publicRatingsForMenu(menu, state.menus.dictionary, ratings) }, 200, {
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        "CDN-Cache-Control": "no-store",
+        "Surrogate-Control": "no-store",
+        "Pragma": "no-cache",
+        "Expires": "0",
+      });
     }
     if (path.startsWith("/api/admin/")) return await adminRoutes(request, url, path);
     return fail("接口不存在", 404);
