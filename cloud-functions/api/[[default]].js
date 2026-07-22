@@ -9,9 +9,14 @@ const ADMIN_PASSWORD_SHA256 = "3d4a6df67e692969e3092a220365c136d761097075b504bea
 const SESSION_SECONDS = 60 * 60 * 12;
 const MAJOR_KEYS = ["tax", "accounting", "audit", "finance"];
 const MENU_MEALS = {
-  breakfast: ["小菜", "热菜", "中点", "主食", "西点", "饮料"],
-  lunch: ["热菜", "炖罐汤", "快汤", "主食", "面档", "佐品", "煎扒档", "水果/饮料"],
-  dinner: ["热菜", "炖罐汤", "主食", "面档", "煎扒档", "水果"],
+  breakfast: ["热菜", "中点", "主食", "西点", "饮料"],
+  lunch: ["热菜", "免费汤", "炖汤", "主食", "面档", "饮品", "煎扒档", "饮料"],
+  dinner: ["热菜", "免费汤", "主食", "面档", "煎扒档"],
+};
+const MENU_CATEGORY_SOURCES = {
+  breakfast: { 热菜: ["热菜", "小菜"], 中点: ["中点"], 主食: ["主食"], 西点: ["西点"], 饮料: ["饮料", "水果/饮料", "水果"] },
+  lunch: { 热菜: ["热菜"], 免费汤: ["免费汤", "快汤"], 炖汤: ["炖汤", "炖罐汤"], 主食: ["主食"], 面档: ["面档"], 饮品: ["饮品", "佐品"], 煎扒档: ["煎扒档"], 饮料: ["饮料", "水果/饮料", "水果"] },
+  dinner: { 热菜: ["热菜"], 免费汤: ["免费汤", "快汤", "炖罐汤", "炖汤"], 主食: ["主食"], 面档: ["面档"], 煎扒档: ["煎扒档"] },
 };
 
 const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), {
@@ -56,9 +61,9 @@ function normalizeState(raw) {
     majors,
     uploads: (state.uploads || []).map((upload) => ({ ...upload, major: majorKey(upload.major) })),
     menus: {
-      current: state.menus?.current || null,
+      current: state.menus?.current ? sanitizeMenu(state.menus.current) : null,
       version: state.menus?.version || defaultVersion("暂无已发布菜单"),
-      uploads: Array.isArray(state.menus?.uploads) ? state.menus.uploads : [],
+      uploads: Array.isArray(state.menus?.uploads) ? state.menus.uploads.map((upload) => ({ ...upload, menu: sanitizeMenu(upload.menu) })) : [],
     },
   };
 }
@@ -163,8 +168,9 @@ function sanitizeMenu(input) {
     for (const [meal, categories] of Object.entries(MENU_MEALS)) {
       meals[meal] = {};
       for (const category of categories) {
-        const items = Array.isArray(day?.meals?.[meal]?.[category]) ? day.meals[meal][category] : [];
-        meals[meal][category] = items.slice(0, 40).map((item) => text(item, 100)).filter(Boolean);
+        const sourceNames = MENU_CATEGORY_SOURCES[meal]?.[category] || [category];
+        const items = sourceNames.flatMap((sourceName) => Array.isArray(day?.meals?.[meal]?.[sourceName]) ? day.meals[meal][sourceName] : []);
+        meals[meal][category] = [...new Set(items.slice(0, 40).map((item) => text(item, 100)).filter(Boolean))];
       }
     }
     return {
