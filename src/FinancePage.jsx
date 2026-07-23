@@ -134,10 +134,14 @@ export default function FinancePage({ data, loading, error, onReload }) {
   return <section className="page finance-page">
     <header className="finance-header">
       <div><em>FINANCE ASSISTANT</em><h1>📈 纳斯达克100投资分析</h1><p>实时行情 · 历史走势 · 估值分析 · 投资参考</p></div>
-      <button className="finance-refresh" disabled={loading} onClick={onReload}><RefreshCw className={loading ? "spin" : ""}/>{loading ? "更新中" : "刷新数据"}</button>
+      <div className="finance-refresh-wrap">
+        <button className="finance-refresh" disabled={loading} onClick={onReload}><RefreshCw className={loading ? "spin" : ""}/>{loading ? "更新中" : "刷新数据"}</button>
+        <small className="finance-last-update">最后更新：{data?.update_time ? formatTime(data.update_time, true) : "—"}</small>
+      </div>
     </header>
 
     {error && !data && <div className="finance-error"><AlertTriangle/><span><strong>行情暂时不可用</strong><small>{error}</small></span></div>}
+    {error && data && <div className="finance-stale"><AlertTriangle/><span>{error}</span></div>}
     {data?.stale && <div className="finance-stale"><Clock3/>外部行情源暂时不可用，当前显示最近一次有效数据{data?.update_time ? `（${formatTime(data.update_time, true)}）` : ""}。</div>}
 
     <section className="finance-dashboard">
@@ -272,17 +276,29 @@ function Collapsible({ eyebrow, title, icon, children, collapsedOnMobile = false
 
 function ValuationScale({ pe, bands }) {
   const value = Number(pe);
-  const finiteBands = bands.filter((band) => band.max !== null);
-  const scaleMin = Math.min(15, ...finiteBands.map((band) => (band.max ?? 60) - 20));
-  const scaleMax = Math.max(55, ...finiteBands.map((band) => (band.max ?? 45) + 10));
-  const position = Number.isFinite(value) ? Math.max(0, Math.min(100, (value - scaleMin) / (scaleMax - scaleMin) * 100)) : null;
-  return <div className="valuation-scale dynamic">
-    <div className="valuation-scale-labels">{bands.map((band, index) => <span key={index}>{band.label}</span>)}</div>
-    <div className="valuation-scale-track segmented">
-      {bands.map((band, index) => <i key={index} className={`segment tone-${band.tone}`} style={{ left: `${index / bands.length * 100}%`, width: `${100 / bands.length}%` }}/>)}
-      {position !== null && <b className="scale-marker" style={{ left: `${position}%` }}><em>当前</em></b>}
+  const scaleMin = 15;
+  const scaleMax = 55;
+  const pct = (v) => Math.max(0, Math.min(100, (v - scaleMin) / (scaleMax - scaleMin) * 100));
+  // 按 PE 边界真实比例分段，刻度与分段严格对齐
+  const segments = [];
+  let start = scaleMin;
+  bands.forEach((band, index) => {
+    const end = index === bands.length - 1 || band.max === null ? scaleMax : Math.max(start, Math.min(band.max, scaleMax));
+    segments.push({ band, start, end });
+    start = end;
+  });
+  const position = Number.isFinite(value) ? Math.max(1, Math.min(99, pct(value))) : null;
+  return <div className="valuation-scale v2">
+    <div className="scale-track">
+      {segments.map((seg, index) => <div key={index} className={`seg tone-${seg.band.tone}`} style={{ left: `${pct(seg.start)}%`, width: `${pct(seg.end) - pct(seg.start)}%` }}>
+        <span>{seg.band.icon} {seg.band.label}</span>
+      </div>)}
+      {position !== null && <b className="scale-marker" style={{ left: `${position}%` }}><em>当前 {number(value, 1)}</em></b>}
     </div>
-    <div className="valuation-scale-values">{bands.map((band, index) => <span key={index}>{band.max === null ? `≥${bands[index - 1]?.max ?? ""}` : index === 0 ? `≤${band.max}` : `${bands[index - 1]?.max}–${band.max}`}</span>)}</div>
+    <div className="scale-ticks">
+      {segments.map((seg, index) => <span key={index} className={index === 0 ? "first" : ""} style={{ left: `${pct(seg.start)}%` }}>{seg.start}</span>)}
+      <span className="last" style={{ left: "100%" }}>{scaleMax}</span>
+    </div>
   </div>;
 }
 

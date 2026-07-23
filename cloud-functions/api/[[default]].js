@@ -557,6 +557,7 @@ function normalizeMarket(raw) {
       price: finiteNumber(shSource.price),
       change_percent: finiteNumber(shSource.change_percent),
       quote_date: text(shSource.quote_date, 10),
+      source: text(shSource.source, 80),
       update_time: text(shSource.update_time, 30),
       history: normalizeMarketRows(shSource.history),
     } : null,
@@ -668,6 +669,28 @@ async function fetchTwelveNdxOhlc() {
   };
 }
 
+async function fetchEastmoneyOhlc(secid) {
+  const beg = `${new Date().getUTCFullYear() - 10}0101`;
+  const data = await fetchJson(`https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${encodeURIComponent(secid)}&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55&klt=101&fqt=0&beg=${beg}&end=20500131`);
+  const klines = data?.data?.klines;
+  if (!Array.isArray(klines) || !klines.length) throw new Error("东方财富未返回历史行情");
+  const rows = klines.map((line) => {
+    const [date, open, close, high, low] = String(line).split(",");
+    return [text(date, 10), finiteNumber(open), finiteNumber(high), finiteNumber(low), finiteNumber(close)];
+  }).filter((row) => /^20\d{2}-\d{2}-\d{2}$/.test(row[0]) && row[4] !== null);
+  if (!rows.length) throw new Error("东方财富历史行情格式异常");
+  const last = rows.at(-1);
+  const previous = rows.at(-2);
+  return {
+    price: last[4],
+    change: previous ? (last[4] / previous[4] - 1) * 100 : null,
+    rows,
+    quote_date: last[0],
+    source: "东方财富",
+    pe: null,
+  };
+}
+
 async function fetchYahooOhlc(symbol, range = "10y") {
   const encoded = encodeURIComponent(symbol);
   let lastError = null;
@@ -750,23 +773,33 @@ function resolveMarketPe(market, settings, realPe) {
 }
 
 async function refreshMarket(cached, settings) {
+  // 45秒内的重复刷新请求直接返回缓存，避免频繁请求外部行情接口
+  const lastUpdate = Date.parse(cached?.ndx?.update_time || 0);
+  if (cached?.ndx?.price && Date.now() - lastUpdate < 45000) return normalizeMarket(cached);
   const errors = [];
   let ndxSnapshot = null;
   let realPe = null;
-  if (text(process.env.TWELVE_DATA_API_KEY, 200)) {
+  const ndxSources = [];
+  if (text(process.env.TWELVE_DATA_API_KEY, 200)) ndxSources.push(["Twelve Data", fetchTwelveNdxOhlc]);
+  ndxSources.push(["东方财富", () => fetchEastmoneyOhlc("100.NDX")], ["Yahoo Finance", () => fetchYahooOhlc("^NDX")]);
+  for (const [name, fetcher] of ndxSources) {
     try {
-      ndxSnapshot = await fetchTwelveNdxOhlc();
-      realPe = ndxSnapshot.pe;
+      ndxSnapshot = await fetcher();
+      if (ndxSnapshot?.pe) realPe = ndxSnapshot.pe;
+      break;
     } catch (error) {
-      errors.push(text(error?.message, 160));
+      errors.push(`${name}：${text(error?.message, 120)}`);
     }
   }
-  if (!ndxSnapshot) ndxSnapshot = await fetchYahooOhlc("^NDX");
+  if (!ndxSnapshot) throw new Error(`纳斯达克100行情源全部不可用（${errors.join("；")}）`);
   let shSnapshot = null;
-  try {
-    shSnapshot = await fetchYahooOhlc("000001.SS");
-  } catch (error) {
-    errors.push(`上证指数：${text(error?.message, 140)}`);
+  for (const [name, fetcher] of [["东方财富", () => fetchEastmoneyOhlc("1.000001")], ["Yahoo Finance", () => fetchYahooOhlc("000001.SS")]]) {
+    try {
+      shSnapshot = await fetcher();
+      break;
+    } catch (error) {
+      errors.push(`上证指数/${name}：${text(error?.message, 120)}`);
+    }
   }
   const now = new Date().toISOString();
   const next = {
@@ -783,6 +816,7 @@ async function refreshMarket(cached, settings) {
       price: shSnapshot.price,
       change_percent: shSnapshot.change,
       quote_date: shSnapshot.quote_date,
+      source: shSnapshot.source,
       update_time: now,
       history: mergeMarketRows(cached.shanghai?.history, shSnapshot.rows, shSnapshot),
     } : cached.shanghai || null,
@@ -843,14 +877,15 @@ function publicMarket(market, settings, stale = false) {
   };
 }
 
-async function nasdaq100Response() {
+async function nasdaq100Response(url) {
   const settings = await readFinanceSettings();
   let cached = await readMarket();
+  const force = Boolean(url?.searchParams?.get("refresh"));
   const age = cached.ndx?.update_time ? Date.now() - new Date(cached.ndx.update_time).getTime() : Infinity;
   const needUpgrade = (cached.ndx?.history?.length || 0) < 1500 || !cached.shanghai;
-  let due = age > (newYorkMarketOpen() ? 45 * 60000 : 6 * 3600000);
+  let due = age > (newYorkMarketOpen() ? 60000 : 30 * 60000);
   if (needUpgrade && age > 15 * 60000) due = true;
-  if (due || !cached.ndx?.price) {
+  if (force || due || !cached.ndx?.price) {
     try {
       cached = await refreshMarket(cached, settings);
     } catch (error) {
@@ -1394,7 +1429,7 @@ export async function onRequest({ request }) {
     if (path === "/api/analytics/visit" && request.method === "POST") return await recordAnonymousVisit(request);
     if (path === "/api/analytics/action" && request.method === "POST") return await recordUserAction(request);
     if (path === "/api/menu-vote" && request.method === "POST") return await voteMenuDish(request);
-    if (path === "/api/nasdaq100" && request.method === "GET") return await nasdaq100Response();
+    if (path === "/api/nasdaq100" && request.method === "GET") return await nasdaq100Response(url);
     if ((path === "/api/live-courses" || path.startsWith("/api/live-courses/") || path === "/api/courses") && request.method === "GET") {
       const state = await readState();
       const pathMajor = path.startsWith("/api/live-courses/") ? decodeURIComponent(path.slice("/api/live-courses/".length)) : null;

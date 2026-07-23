@@ -2724,50 +2724,6 @@ header p {
 .valuation-chip.neutral { color: #5b6b82; background: #eef1f6; }
 .valuation-chip.deep { color: #6b4dbb; background: #efe9fb; }
 
-.valuation-scale.dynamic { margin-top: 16px; }
-.valuation-scale-track.segmented {
-  position: relative;
-  height: 10px;
-  border-radius: 999px;
-  overflow: visible;
-  background: #eef1f6;
-  display: flex;
-}
-.valuation-scale-track.segmented .segment {
-  position: absolute;
-  top: 0;
-  height: 100%;
-  opacity: .85;
-}
-.valuation-scale-track.segmented .segment:first-child { border-radius: 999px 0 0 999px; }
-.valuation-scale-track.segmented .segment:last-of-type { border-radius: 0 999px 999px 0; }
-.segment.tone-low { background: #8fd8bd; }
-.segment.tone-fair { background: #f3dd85; }
-.segment.tone-elevated { background: #f3c08a; }
-.segment.tone-high { background: #f0a9ae; }
-.segment.tone-deep { background: #c3b0ea; }
-.scale-marker {
-  position: absolute;
-  top: -7px;
-  width: 0;
-  height: 0;
-  border-left: 7px solid transparent;
-  border-right: 7px solid transparent;
-  border-top: 10px solid #17335f;
-  transform: translateX(-7px);
-}
-.scale-marker em {
-  position: absolute;
-  top: -22px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-style: normal;
-  font-size: 10px;
-  font-weight: 800;
-  color: #17335f;
-  white-space: nowrap;
-}
-
 .zone-list { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
 .zone-row {
   display: grid;
@@ -2888,3 +2844,28 @@ header p {
 /* ================= 财经模块 2.0 结束 ================= */
 
 .chart-note { margin: 10px 2px 0; font-size: 11px; color: #8490a1; }
+
+/* 估值刻度条 v2：按 PE 边界真实比例分段 */
+.valuation-scale.v2 { margin-top: 34px; }
+.valuation-scale.v2 .scale-track { position: relative; height: 28px; border-radius: 9px; background: #eef1f6; }
+.valuation-scale.v2 .seg { position: absolute; top: 0; height: 100%; display: flex; align-items: center; justify-content: center; }
+.valuation-scale.v2 .seg span { font-size: 11px; font-weight: 800; color: #26374f; white-space: nowrap; overflow: hidden; }
+.valuation-scale.v2 .seg:first-child { border-radius: 9px 0 0 9px; }
+.valuation-scale.v2 .seg:last-of-type { border-radius: 0 9px 9px 0; }
+.valuation-scale.v2 .seg.tone-low { background: #c9ecdd; }
+.valuation-scale.v2 .seg.tone-fair { background: #f7e9b4; }
+.valuation-scale.v2 .seg.tone-elevated { background: #f7dab4; }
+.valuation-scale.v2 .seg.tone-high { background: #f5c6ca; }
+.valuation-scale.v2 .seg.tone-deep { background: #ddd2f3; }
+.valuation-scale.v2 .scale-marker { position: absolute; top: -8px; width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 11px solid #17335f; transform: translateX(-7px); z-index: 2; }
+.valuation-scale.v2 .scale-marker em { position: absolute; top: -24px; left: 50%; transform: translateX(-50%); font-style: normal; font-size: 10px; font-weight: 800; color: #17335f; white-space: nowrap; background: #fff; border: 1px solid #d5deea; border-radius: 6px; padding: 1px 6px; box-shadow: 0 3px 8px rgba(23,51,95,.10); }
+.valuation-scale.v2 .scale-ticks { position: relative; height: 16px; margin-top: 7px; }
+.valuation-scale.v2 .scale-ticks span { position: absolute; transform: translateX(-50%); font-size: 10px; color: #8490a1; }
+.valuation-scale.v2 .scale-ticks span.first { transform: none; }
+.valuation-scale.v2 .scale-ticks span.last { transform: translateX(-100%); }
+.finance-refresh-wrap { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+.finance-last-update { font-size: 11px; color: #8490a1; }
+@media (max-width: 720px) {
+  .valuation-scale.v2 .seg span { font-size: 10px; }
+  .finance-refresh-wrap { align-items: flex-start; }
+}
