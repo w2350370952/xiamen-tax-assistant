@@ -203,9 +203,9 @@ export default function FinancePage({ data, loading, error, onReload }) {
           </div>
         </div>
         <div className="valuation-numbers">
-          <article><small>当前PE</small><strong>{Number.isFinite(Number(data?.pe)) ? <>{number(data.pe, 1)}<em>倍</em></> : "暂无数据"}</strong></article>
+          <article><small>当前PE</small><strong>{typeof data?.pe === "number" ? <>{number(data.pe, 1)}<em>倍</em></> : "暂无数据"}</strong></article>
           <article><small>历史平均PE</small><strong>{number(data?.pe_average, 1)}<em>倍</em></strong></article>
-          <article><small>历史估值分位</small><strong>{Number.isFinite(Number(data?.pe_percentile)) ? `${number(data.pe_percentile, 0)}%` : "样本积累中"}</strong></article>
+          <article><small>历史估值分位</small><strong>{typeof data?.pe_percentile === "number" ? `${number(data.pe_percentile, 0)}%` : "样本积累中"}</strong></article>
         </div>
         <ValuationScale pe={data?.pe} bands={bands}/>
         <p className="valuation-source">当前PE口径：{data?.pe_source || "等待估值数据"}；平均PE参考：{data?.pe_average_source || "样本积累中"}。{data?.pe_kind === "estimated" ? "当前为模型估算结果，并非实时实测估值，请知悉。" : "PE 代理值与指数官方口径可能存在差异。"}</p>
