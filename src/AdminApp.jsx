@@ -142,15 +142,22 @@ export default function AdminApp() {
   if (session === null) return <div className="admin-loading"><span/>正在连接腾讯云管理员服务…</div>;
   if (!session) return <Login busy={busy} notice={notice} onSubmit={login}/>;
   const active = uploads.find((item) => item.id === activeId) || null;
+  const sectionMeta = section === "menu"
+    ? { eyebrow: "DINING MANAGEMENT", title: "一周菜单管理", description: "上传食堂一周菜单图片，自动识别并校对后发布到学生端。" }
+    : section === "analytics"
+      ? { eyebrow: "VISITOR ANALYTICS", title: "访问指标分析", description: "按北京时间查看每日、每小时和设备系统的匿名访问情况。" }
+      : section === "users"
+        ? { eyebrow: "DEVICE & BEHAVIOR", title: "用户管理与行为分析", description: "按匿名设备码查看设备信息、关键功能使用情况和历史访问轨迹。" }
+        : { eyebrow: "COURSE MANAGEMENT", title: `${MAJORS.find((item) => item.id === major)?.label}专业课程管理`, description: "各专业课程独立保存，上传和调课只影响当前选择的专业。" };
 
   return <div className="admin-shell">
     <header className="admin-topbar"><a href="/"><ArrowLeft size={18}/>返回学生端</a><div><ShieldCheck/><span><strong>厦国会专硕课程助手</strong><small>管理员控制台 · 腾讯云 EdgeOne</small></span></div><button onClick={logout}><LogOut size={17}/>退出登录</button></header>
     <main className="admin-main">
-      <section className="admin-heading"><div><em>{section === "menu" ? "DINING MANAGEMENT" : section === "analytics" ? "VISITOR ANALYTICS" : "COURSE MANAGEMENT"}</em><h1>{section === "menu" ? "一周菜单管理" : section === "analytics" ? "访问指标分析" : `${MAJORS.find((item) => item.id === major)?.label}专业课程管理`}</h1><p>{section === "menu" ? "上传食堂一周菜单图片，自动识别并校对后发布到学生端。" : section === "analytics" ? "按北京时间查看每日、每小时和设备系统的匿名访问情况。" : "各专业课程独立保存，上传和调课只影响当前选择的专业。"}</p></div>{!['menu','analytics'].includes(section) && <div className="admin-heading-actions"><label className="major-select">管理专业<select value={major} onChange={(event) => { setMajor(event.target.value); setNotice(""); }} disabled={busy}>{MAJORS.map((item) => <option key={item.id} value={item.id}>{item.label}专业</option>)}</select></label>{section === "uploads" && <label className={`upload-button ${busy ? "disabled" : ""}`}><UploadCloud/>上传课程 PDF<input ref={fileRef} type="file" accept="application/pdf,.pdf" disabled={busy} onChange={uploadPdf}/></label>}</div>}</section>
-      <nav className="admin-tabs"><button className={section === "published" ? "active" : ""} onClick={() => setSection("published")}><CalendarDays/>现有课程 <span>{courses.length}</span></button><button className={section === "uploads" ? "active" : ""} onClick={() => setSection("uploads")}><UploadCloud/>PDF 上传与审核 <span>{uploads.length}</span></button><button className={section === "menu" ? "active" : ""} onClick={() => setSection("menu")}><UtensilsCrossed/>今日菜单</button><button className={section === "analytics" ? "active" : ""} onClick={() => setSection("analytics")}><BarChart3/>指标分析</button></nav>
+      <section className="admin-heading"><div><em>{sectionMeta.eyebrow}</em><h1>{sectionMeta.title}</h1><p>{sectionMeta.description}</p></div>{!['menu','analytics','users'].includes(section) && <div className="admin-heading-actions"><label className="major-select">管理专业<select value={major} onChange={(event) => { setMajor(event.target.value); setNotice(""); }} disabled={busy}>{MAJORS.map((item) => <option key={item.id} value={item.id}>{item.label}专业</option>)}</select></label>{section === "uploads" && <label className={`upload-button ${busy ? "disabled" : ""}`}><UploadCloud/>上传课程 PDF<input ref={fileRef} type="file" accept="application/pdf,.pdf" disabled={busy} onChange={uploadPdf}/></label>}</div>}</section>
+      <nav className="admin-tabs"><button className={section === "published" ? "active" : ""} onClick={() => setSection("published")}><CalendarDays/>现有课程 <span>{courses.length}</span></button><button className={section === "uploads" ? "active" : ""} onClick={() => setSection("uploads")}><UploadCloud/>PDF 上传与审核 <span>{uploads.length}</span></button><button className={section === "menu" ? "active" : ""} onClick={() => setSection("menu")}><UtensilsCrossed/>今日菜单</button><button className={section === "analytics" ? "active" : ""} onClick={() => setSection("analytics")}><BarChart3/>指标分析</button><button className={section === "users" ? "active" : ""} onClick={() => setSection("users")}><Users/>用户管理</button></nav>
       {busy && progress > 0 && <div className="parse-progress"><span style={{ width: `${progress}%` }}/><b>{progress}%</b><small>{progressLabel}</small></div>}
       {notice && <div className="admin-notice">{notice}<button onClick={() => setNotice("")}><X size={16}/></button></div>}
-      {section === "analytics" ? <AnalyticsPanel/> : section === "menu" ? <MenuManager busy={busy} setBusy={setBusy} setProgress={setProgress} setProgressLabel={setProgressLabel} setNotice={setNotice}/> : section === "published" ? <PublishedCourses majorLabel={MAJORS.find((item) => item.id === major)?.label} courses={courses} version={version} busy={busy} onSave={savePublishedCourse} onDelete={deletePublishedCourse}/> : <div className="admin-workspace">
+      {section === "users" ? <UserManagementPanel/> : section === "analytics" ? <AnalyticsPanel/> : section === "menu" ? <MenuManager busy={busy} setBusy={setBusy} setProgress={setProgress} setProgressLabel={setProgressLabel} setNotice={setNotice}/> : section === "published" ? <PublishedCourses majorLabel={MAJORS.find((item) => item.id === major)?.label} courses={courses} version={version} busy={busy} onSave={savePublishedCourse} onDelete={deletePublishedCourse}/> : <div className="admin-workspace">
         <aside className="upload-list"><div className="upload-list-title"><h2>上传记录</h2><span>{uploads.length}</span></div>{uploads.length ? uploads.map((item) => <button key={item.id} className={activeId === item.id ? "active" : ""} onClick={() => setActiveId(item.id)}><FileText/><span><strong>{item.filename}</strong><small>{new Date(item.uploaded_at).toLocaleString("zh-CN")}</small></span><em className={item.status}>{item.status === "published" ? "已发布" : "待审核"}</em></button>) : <div className="upload-empty"><FileText/><p>还没有上传记录</p><small>请点击右上角上传课程 PDF</small></div>}</aside>
         <section className="review-panel">{active ? <><div className="review-head"><div><span className={`status ${active.status}`}>{active.status === "published" ? <CheckCircle2/> : <Pencil/>}{active.status === "published" ? "已发布版本" : "待审核"}</span><h2>{active.filename}</h2><p>共识别 {active.drafts?.length || 0} 节课程{active.warnings?.length ? ` · ${active.warnings.length} 条提示` : ""}</p></div><div><button className="danger" disabled={busy} onClick={() => deleteUpload(active.id)}><Trash2/>删除文件记录</button><button className="publish" disabled={busy || !active.drafts?.length} onClick={() => publish(active)}><CheckCircle2/>确认发布</button></div></div>{active.warnings?.length > 0 && <div className="parse-warnings">{active.warnings.map((warning, index) => <p key={index}>• {warning}</p>)}</div>}<CourseReview upload={active} onSave={saveDraft} onDelete={deleteDraft}/></> : <div className="review-empty"><UploadCloud/><h2>上传课程总表</h2><p>系统会自动识别日期、时段、课程、教师、班级、教室和备注。</p></div>}</section>
       </div>}
@@ -224,6 +231,80 @@ function AnalyticsPanel() {
     </div>
     <div className="analytics-privacy"><ShieldCheck/><span><strong>匿名统计</strong><small>系统不保存姓名、手机号和完整 IP；访客人数是按浏览器中的匿名设备标识估算，同一个人使用两台设备会算作两位访客。</small></span></div>
   </section>;
+}
+
+const beijingTime = (value, short = false) => {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    month: "2-digit",
+    day: "2-digit",
+    ...(short ? {} : { year: "numeric" }),
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(value)).replaceAll("/", "-");
+};
+
+function UserManagementPanel() {
+  const [devices, setDevices] = useState([]);
+  const [dashboard, setDashboard] = useState(null);
+  const [range, setRange] = useState(7);
+  const [query, setQuery] = useState("");
+  const [details, setDetails] = useState(null);
+  const [remark, setRemark] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const load = async () => {
+    setLoading(true); setError("");
+    try {
+      const [deviceData, dashboardData] = await Promise.all([api("/api/admin/devices"), api(`/api/admin/user-analytics?days=${range}`)]);
+      setDevices(deviceData.devices || []); setDashboard(dashboardData);
+    } catch (loadError) { setError(loadError.message); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, [range]);
+  const openDetails = async (deviceId) => {
+    setLoading(true); setError("");
+    try { const data = await api(`/api/admin/devices/${encodeURIComponent(deviceId)}`); setDetails(data); setRemark(data.device?.remark || ""); }
+    catch (detailError) { setError(detailError.message); }
+    finally { setLoading(false); }
+  };
+  const saveRemark = async () => {
+    if (!details?.device) return;
+    setLoading(true);
+    try {
+      const data = await api(`/api/admin/devices/${encodeURIComponent(details.device.device_id)}`, { method: "PATCH", body: JSON.stringify({ remark }) });
+      setDetails((current) => ({ ...current, device: data.device }));
+      setDevices((current) => current.map((item) => item.device_id === data.device.device_id ? data.device : item));
+    } catch (saveError) { setError(saveError.message); }
+    finally { setLoading(false); }
+  };
+  const deleteDevice = async (device) => {
+    if (!window.confirm(`确定删除设备 ${device.device_id} 及其全部行为记录吗？此操作无法恢复。`)) return;
+    setLoading(true);
+    try { await api(`/api/admin/devices/${encodeURIComponent(device.device_id)}`, { method: "DELETE" }); setDetails(null); await load(); }
+    catch (deleteError) { setError(deleteError.message); setLoading(false); }
+  };
+  const keyword = query.trim().toLowerCase();
+  const visible = devices.filter((item) => !keyword || [item.device_id, item.device_name, item.device_type, item.system, item.browser, item.remark].some((value) => String(value || "").toLowerCase().includes(keyword)));
+  const summary = dashboard?.summary || { total_devices: 0, today_active: 0, week_active: 0, range_actions: 0 };
+  const daily = dashboard?.daily || [];
+  const maxDaily = Math.max(1, ...daily.map((item) => item.actions));
+  const maxRank = Math.max(1, ...(dashboard?.page_ranking || []).map((item) => item.count), ...(dashboard?.action_ranking || []).map((item) => item.count));
+  const deviceIcon = (device) => device.device_type === "手机" ? "📱" : device.device_type === "平板" ? "▣" : device.device_type === "电脑" ? "💻" : "◈";
+  return <section className="user-management">
+    <div className="user-toolbar"><div><span className="status published"><ShieldCheck/>匿名设备分析</span><h2>设备与行为概览</h2><p>设备码由浏览器本地匿名标识生成，不保存姓名、手机号和完整 IP。</p></div><div className="user-toolbar-actions"><div>{[7,30,90].map((value) => <button key={value} className={range === value ? "active" : ""} onClick={() => setRange(value)}>近{value}天</button>)}</div><button disabled={loading} onClick={load}><RefreshCw className={loading ? "spinning" : ""}/>刷新</button></div></div>
+    {error && <div className="analytics-error">{error}</div>}
+    <div className="user-metrics"><article><small>总设备数量</small><strong>{summary.total_devices}<em>台</em></strong><p>已生成匿名设备码</p></article><article><small>今日活跃设备</small><strong>{summary.today_active}<em>台</em></strong><p>北京时间今日访问</p></article><article><small>本周活跃设备</small><strong>{summary.week_active}<em>台</em></strong><p>最近7天内活跃</p></article><article><small>关键操作记录</small><strong>{summary.range_actions}<em>次</em></strong><p>近{range}天功能使用</p></article></div>
+    <div className="behavior-dashboard"><div className="behavior-trend"><header><div><small>DAILY ACTIVITY</small><h3>每日行为趋势</h3></div><span>设备数 / 操作数</span></header><div>{daily.map((item) => <article key={item.date} title={`${item.date}：${item.devices}台设备，${item.actions}次操作`}><b>{item.actions || ""}</b><i><span style={{height:`${item.actions ? Math.max(8,item.actions/maxDaily*100) : 2}%`}}/></i><small>{item.date.slice(5).replace("-","/")}</small></article>)}</div></div><RankingCard title="页面访问排行" eyebrow="POPULAR PAGES" items={dashboard?.page_ranking || []} max={maxRank}/><RankingCard title="功能使用排行" eyebrow="TOP ACTIONS" items={dashboard?.action_ranking || []} max={maxRank}/></div>
+    <div className="device-table-card"><header><div><small>DEVICE DIRECTORY</small><h3>设备列表</h3><p>共 {devices.length} 台设备，点击任意设备查看完整行为轨迹。</p></div><label>搜索设备<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="设备码、系统、浏览器或备注"/></label></header>{visible.length ? <><div className="device-table"><div className="device-table-head"><span>设备编号</span><span>设备类型</span><span>系统</span><span>浏览器</span><span>首次访问</span><span>最近访问</span><span>访问次数</span><span>操作</span></div>{visible.map((device) => <article key={device.device_id}><button className="device-code" onClick={() => openDetails(device.device_id)}><i>{deviceIcon(device)}</i><span><strong>{device.device_id}</strong><small>{device.remark || device.device_name}</small></span></button><span>{device.device_type}</span><span>{device.system}</span><span>{device.browser}</span><time>{beijingTime(device.first_visit_time)}</time><time>{beijingTime(device.last_visit_time)}</time><b>{device.visit_count}</b><div><button onClick={() => openDetails(device.device_id)}>查看详情</button><button className="delete" onClick={() => deleteDevice(device)}>删除</button></div></article>)}</div><div className="device-mobile-list">{visible.map((device) => <article key={device.device_id}><button onClick={() => openDetails(device.device_id)}><i>{deviceIcon(device)}</i><span><strong>{device.device_id}</strong><small>{device.device_name} · {device.system} · {device.browser}</small><em>{device.remark || `最近 ${beijingTime(device.last_visit_time, true)}`}</em></span><b>{device.visit_count}次</b></button></article>)}</div></> : <div className="user-empty"><Users/><h3>{devices.length ? "没有匹配的设备" : "还没有设备记录"}</h3><p>{devices.length ? "请更换搜索关键词" : "学生端产生新的访问后会自动出现在这里。"}</p></div>}</div>
+    {details && <div className="device-detail-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setDetails(null)}><section className="device-detail"><button className="editor-close" onClick={() => setDetails(null)}><X/></button><header><span>{deviceIcon(details.device)}</span><div><small>DEVICE PROFILE</small><h2>{details.device.device_id}</h2><p>{details.device.device_name} · {details.device.system} · {details.device.browser}</p></div></header><div className="device-basic-grid"><article><small>设备类型</small><strong>{details.device.device_type}</strong></article><article><small>屏幕尺寸</small><strong>{details.device.screen_size || "未获取"}</strong></article><article><small>首次访问</small><strong>{beijingTime(details.device.first_visit_time)}</strong></article><article><small>最近访问</small><strong>{beijingTime(details.device.last_visit_time)}</strong></article></div><div className="device-stat-grid"><article><small>累计访问</small><strong>{details.device.visit_count}<em>次</em></strong></article><article><small>行为记录</small><strong>{details.statistics.action_count}<em>条</em></strong></article><article><small>最常访问页面</small><strong>{details.statistics.favorite_page}</strong></article><article><small>最常操作</small><strong>{details.statistics.favorite_action}</strong></article></div><div className="device-remark"><label>管理员备注<input value={remark} onChange={(event) => setRemark(event.target.value)} maxLength={200} placeholder="例如：经常查看菜单的 iPhone"/></label><button disabled={loading} onClick={saveRemark}>保存备注</button></div><div className="device-log"><header><h3>历史访问记录</h3><span>最近 {details.logs.length} 条</span></header>{details.logs.length ? <div><div className="device-log-head"><span>时间</span><span>页面</span><span>操作</span></div>{details.logs.map((log) => <article key={log.id}><time>{beijingTime(log.create_time)}</time><strong>{log.page_name}</strong><p><b>{log.action_type}</b>{log.action_detail && <span>{log.action_detail}</span>}</p></article>)}</div> : <p className="no-log">暂无行为记录</p>}</div><button className="delete-device" onClick={() => deleteDevice(details.device)}><Trash2/>删除该设备及全部记录</button></section></div>}
+  </section>;
+}
+
+function RankingCard({ title, eyebrow, items, max }) {
+  return <div className="behavior-ranking"><header><small>{eyebrow}</small><h3>{title}</h3></header>{items.length ? <div>{items.map((item, index) => <article key={item.name}><i>{index + 1}</i><span><strong>{item.name}</strong><em><b style={{width:`${item.count/max*100}%`}}/></em></span><small>{item.count}次</small></article>)}</div> : <p>暂无数据</p>}</div>;
 }
 
 const MENU_LABELS = { breakfast: "早餐", lunch: "午餐", dinner: "晚餐" };
