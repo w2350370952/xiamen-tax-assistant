@@ -440,7 +440,6 @@ const finiteNumber = (value) => {
 
 // ==================== 市场数据系统（纳斯达克100 + 上证指数） ====================
 const MARKET_KEY = "market-data-v2.json";
-const FINANCE_SETTINGS_KEY = "finance-settings-v1.json";
 const MARKET_HISTORY_LIMIT = 2600;
 const LONG_RUN_PE = 24.25;
 const FINANCE_TONES = ["low", "fair", "elevated", "high", "deep"];
@@ -509,13 +508,9 @@ function sanitizeFinanceSettings(raw) {
   };
 }
 
+// 财经参数固定使用内置默认值，无需管理员维护，外部数据自动驱动
 async function readFinanceSettings() {
-  const stored = await store.get(FINANCE_SETTINGS_KEY, { type: "json", consistency: "strong" });
-  return sanitizeFinanceSettings(stored || DEFAULT_FINANCE_SETTINGS);
-}
-
-async function writeFinanceSettings(settings) {
-  await store.setJSON(FINANCE_SETTINGS_KEY, sanitizeFinanceSettings(settings), { cacheControl: "no-store" });
+  return sanitizeFinanceSettings(null);
 }
 
 function normalizeMarketRows(rows, limit = MARKET_HISTORY_LIMIT) {
@@ -1389,17 +1384,6 @@ async function adminRoutes(request, url, path) {
     await writeState(state);
     return json({ ok: true, major, version: majorData.version, course_count: courses.length });
   }
-  if (path === "/api/admin/finance-settings" && request.method === "GET") {
-    return json(await readFinanceSettings());
-  }
-
-  if (path === "/api/admin/finance-settings" && request.method === "PUT") {
-    const body = await bodyJson(request);
-    const settings = sanitizeFinanceSettings(body);
-    await writeFinanceSettings(settings);
-    return json(settings);
-  }
-
   return fail("管理员接口不存在", 404);
 }
 

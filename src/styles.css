@@ -2886,3 +2886,5 @@ header p {
   .chart-controls .finance-range { flex-wrap: wrap; }
 }
 /* ================= 财经模块 2.0 结束 ================= */
+
+.chart-note { margin: 10px 2px 0; font-size: 11px; color: #8490a1; }

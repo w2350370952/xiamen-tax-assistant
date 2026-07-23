@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeft, BarChart3, CalendarDays, CheckCircle2, Eye, FileImage, FileText, LogOut, Pencil, RefreshCw, ShieldCheck, Smartphone, Soup, Sparkles, Trash2, TrendingUp, UploadCloud, Users, UtensilsCrossed, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BarChart3, CalendarDays, CheckCircle2, Eye, FileImage, FileText, LogOut, Pencil, RefreshCw, ShieldCheck, Smartphone, Soup, Sparkles, Trash2, UploadCloud, Users, UtensilsCrossed, X } from "lucide-react";
 
 const MAJORS = [
   { id: "tax", label: "税务" },
@@ -148,122 +148,20 @@ export default function AdminApp() {
       ? { eyebrow: "VISITOR ANALYTICS", title: "访问指标分析", description: "按北京时间查看每日、每小时和设备系统的匿名访问情况。" }
       : section === "users"
         ? { eyebrow: "DEVICE & BEHAVIOR", title: "用户管理与行为分析", description: "按匿名设备码查看设备信息、关键功能使用情况和历史访问轨迹。" }
-        : section === "finance"
-          ? { eyebrow: "FINANCE SETTINGS", title: "财经模块设置", description: "调整纳斯达克100估值区间、投资策略参数和手动估值，保存后学生端下一次刷新即生效。" }
-          : { eyebrow: "COURSE MANAGEMENT", title: `${MAJORS.find((item) => item.id === major)?.label}专业课程管理`, description: "各专业课程独立保存，上传和调课只影响当前选择的专业。" };
+        : { eyebrow: "COURSE MANAGEMENT", title: `${MAJORS.find((item) => item.id === major)?.label}专业课程管理`, description: "各专业课程独立保存，上传和调课只影响当前选择的专业。" };
 
   return <div className="admin-shell">
     <header className="admin-topbar"><a href="/"><ArrowLeft size={18}/>返回学生端</a><div><ShieldCheck/><span><strong>厦国会专硕课程助手</strong><small>管理员控制台 · 腾讯云 EdgeOne</small></span></div><button onClick={logout}><LogOut size={17}/>退出登录</button></header>
     <main className="admin-main">
-      <section className="admin-heading"><div><em>{sectionMeta.eyebrow}</em><h1>{sectionMeta.title}</h1><p>{sectionMeta.description}</p></div>{!['menu','analytics','users','finance'].includes(section) && <div className="admin-heading-actions"><label className="major-select">管理专业<select value={major} onChange={(event) => { setMajor(event.target.value); setNotice(""); }} disabled={busy}>{MAJORS.map((item) => <option key={item.id} value={item.id}>{item.label}专业</option>)}</select></label>{section === "uploads" && <label className={`upload-button ${busy ? "disabled" : ""}`}><UploadCloud/>上传课程 PDF<input ref={fileRef} type="file" accept="application/pdf,.pdf" disabled={busy} onChange={uploadPdf}/></label>}</div>}</section>
-      <nav className="admin-tabs"><button className={section === "published" ? "active" : ""} onClick={() => setSection("published")}><CalendarDays/>现有课程 <span>{courses.length}</span></button><button className={section === "uploads" ? "active" : ""} onClick={() => setSection("uploads")}><UploadCloud/>PDF 上传与审核 <span>{uploads.length}</span></button><button className={section === "menu" ? "active" : ""} onClick={() => setSection("menu")}><UtensilsCrossed/>今日菜单</button><button className={section === "analytics" ? "active" : ""} onClick={() => setSection("analytics")}><BarChart3/>指标分析</button><button className={section === "users" ? "active" : ""} onClick={() => setSection("users")}><Users/>用户管理</button><button className={section === "finance" ? "active" : ""} onClick={() => setSection("finance")}><TrendingUp/>财经设置</button></nav>
+      <section className="admin-heading"><div><em>{sectionMeta.eyebrow}</em><h1>{sectionMeta.title}</h1><p>{sectionMeta.description}</p></div>{!['menu','analytics','users'].includes(section) && <div className="admin-heading-actions"><label className="major-select">管理专业<select value={major} onChange={(event) => { setMajor(event.target.value); setNotice(""); }} disabled={busy}>{MAJORS.map((item) => <option key={item.id} value={item.id}>{item.label}专业</option>)}</select></label>{section === "uploads" && <label className={`upload-button ${busy ? "disabled" : ""}`}><UploadCloud/>上传课程 PDF<input ref={fileRef} type="file" accept="application/pdf,.pdf" disabled={busy} onChange={uploadPdf}/></label>}</div>}</section>
+      <nav className="admin-tabs"><button className={section === "published" ? "active" : ""} onClick={() => setSection("published")}><CalendarDays/>现有课程 <span>{courses.length}</span></button><button className={section === "uploads" ? "active" : ""} onClick={() => setSection("uploads")}><UploadCloud/>PDF 上传与审核 <span>{uploads.length}</span></button><button className={section === "menu" ? "active" : ""} onClick={() => setSection("menu")}><UtensilsCrossed/>今日菜单</button><button className={section === "analytics" ? "active" : ""} onClick={() => setSection("analytics")}><BarChart3/>指标分析</button><button className={section === "users" ? "active" : ""} onClick={() => setSection("users")}><Users/>用户管理</button></nav>
       {busy && progress > 0 && <div className="parse-progress"><span style={{ width: `${progress}%` }}/><b>{progress}%</b><small>{progressLabel}</small></div>}
       {notice && <div className="admin-notice">{notice}<button onClick={() => setNotice("")}><X size={16}/></button></div>}
-      {section === "users" ? <UserManagementPanel/> : section === "analytics" ? <AnalyticsPanel/> : section === "finance" ? <FinanceSettingsPanel/> : section === "menu" ? <MenuManager busy={busy} setBusy={setBusy} setProgress={setProgress} setProgressLabel={setProgressLabel} setNotice={setNotice}/> : section === "published" ? <PublishedCourses majorLabel={MAJORS.find((item) => item.id === major)?.label} courses={courses} version={version} busy={busy} onSave={savePublishedCourse} onDelete={deletePublishedCourse}/> : <div className="admin-workspace">
+      {section === "users" ? <UserManagementPanel/> : section === "analytics" ? <AnalyticsPanel/> : section === "menu" ? <MenuManager busy={busy} setBusy={setBusy} setProgress={setProgress} setProgressLabel={setProgressLabel} setNotice={setNotice}/> : section === "published" ? <PublishedCourses majorLabel={MAJORS.find((item) => item.id === major)?.label} courses={courses} version={version} busy={busy} onSave={savePublishedCourse} onDelete={deletePublishedCourse}/> : <div className="admin-workspace">
         <aside className="upload-list"><div className="upload-list-title"><h2>上传记录</h2><span>{uploads.length}</span></div>{uploads.length ? uploads.map((item) => <button key={item.id} className={activeId === item.id ? "active" : ""} onClick={() => setActiveId(item.id)}><FileText/><span><strong>{item.filename}</strong><small>{new Date(item.uploaded_at).toLocaleString("zh-CN")}</small></span><em className={item.status}>{item.status === "published" ? "已发布" : "待审核"}</em></button>) : <div className="upload-empty"><FileText/><p>还没有上传记录</p><small>请点击右上角上传课程 PDF</small></div>}</aside>
         <section className="review-panel">{active ? <><div className="review-head"><div><span className={`status ${active.status}`}>{active.status === "published" ? <CheckCircle2/> : <Pencil/>}{active.status === "published" ? "已发布版本" : "待审核"}</span><h2>{active.filename}</h2><p>共识别 {active.drafts?.length || 0} 节课程{active.warnings?.length ? ` · ${active.warnings.length} 条提示` : ""}</p></div><div><button className="danger" disabled={busy} onClick={() => deleteUpload(active.id)}><Trash2/>删除文件记录</button><button className="publish" disabled={busy || !active.drafts?.length} onClick={() => publish(active)}><CheckCircle2/>确认发布</button></div></div>{active.warnings?.length > 0 && <div className="parse-warnings">{active.warnings.map((warning, index) => <p key={index}>• {warning}</p>)}</div>}<CourseReview upload={active} onSave={saveDraft} onDelete={deleteDraft}/></> : <div className="review-empty"><UploadCloud/><h2>上传课程总表</h2><p>系统会自动识别日期、时段、课程、教师、班级、教室和备注。</p></div>}</section>
       </div>}
     </main>
-  </div>;
-}
-
-const FINANCE_TONE_OPTIONS = [
-  { id: "low", label: "绿色（低位）" },
-  { id: "fair", label: "黄色（中性）" },
-  { id: "elevated", label: "橙色（偏高）" },
-  { id: "high", label: "红色（高位）" },
-  { id: "deep", label: "紫色（极端）" },
-];
-const FINANCE_ICON_OPTIONS = ["🟢", "🟡", "🟠", "🔴", "🟣", "⚪"];
-
-function FinanceSettingsPanel() {
-  const [settings, setSettings] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState("");
-  const [error, setError] = useState("");
-
-  const load = () => {
-    setError("");
-    return api("/api/admin/finance-settings").then((data) => setSettings(data)).catch((err) => setError(err.message));
-  };
-  useEffect(() => { load(); }, []);
-
-  const updateBand = (index, patch) => setSettings((current) => ({ ...current, valuation_bands: current.valuation_bands.map((band, i) => i === index ? { ...band, ...patch } : band) }));
-  const updateZone = (index, patch) => setSettings((current) => ({ ...current, strategy_zones: current.strategy_zones.map((zone, i) => i === index ? { ...zone, ...patch } : zone) }));
-  const numericOrNull = (value) => value === "" ? null : Number(value);
-
-  const save = async () => {
-    setSaving(true); setNotice(""); setError("");
-    try {
-      const payload = {
-        valuation_bands: settings.valuation_bands.map((band) => ({ ...band, max: band.max === null || band.max === "" ? null : Number(band.max) })),
-        strategy_zones: settings.strategy_zones.map((zone) => ({ ...zone, min: zone.min === null || zone.min === "" ? null : Number(zone.min), max: zone.max === null || zone.max === "" ? null : Number(zone.max) })),
-        manual_pe: settings.manual_pe?.value ? { value: Number(settings.manual_pe.value), note: settings.manual_pe.note || "" } : null,
-      };
-      const saved = await api("/api/admin/finance-settings", { method: "PUT", body: JSON.stringify(payload) });
-      setSettings(saved);
-      setNotice("财经设置已保存，学生端下一次刷新行情后生效。");
-    } catch (err) { setError(err.message); }
-    finally { setSaving(false); }
-  };
-
-  const resetDefaults = async () => {
-    if (!window.confirm("确定恢复默认估值区间和策略参数吗？手动估值会一并清空。")) return;
-    setSaving(true); setNotice(""); setError("");
-    try {
-      const saved = await api("/api/admin/finance-settings", { method: "PUT", body: JSON.stringify({}) });
-      setSettings(saved);
-      setNotice("已恢复默认财经参数。");
-    } catch (err) { setError(err.message); }
-    finally { setSaving(false); }
-  };
-
-  if (!settings) return <div className="finance-settings"><div className="admin-loading inline"><span/>{error || "正在加载财经设置…"}</div>{error && <button className="retry" onClick={load}>重试</button>}</div>;
-
-  return <div className="finance-settings">
-    {notice && <div className="admin-notice">{notice}<button onClick={() => setNotice("")}><X size={16}/></button></div>}
-    {error && <div className="admin-notice error">{error}<button onClick={() => setError("")}><X size={16}/></button></div>}
-
-    <section className="fin-card">
-      <div className="fin-card-head"><div><em>VALUATION BANDS</em><h2>估值区间（按 PE 划分市场状态）</h2><p>按 PE 上限从小到大排列，最后一档留空表示"高于上一档"。学生端估值刻度条和市场状态会使用这里的名称、图标和提示文字。</p></div></div>
-      <div className="fin-rows">
-        {settings.valuation_bands.map((band, index) => <div className="fin-row" key={index}>
-          <label>状态名称<input value={band.label} maxLength={8} onChange={(event) => updateBand(index, { label: event.target.value })}/></label>
-          <label>PE 上限<input type="number" min="1" step="0.5" placeholder="留空=无上限" value={band.max ?? ""} onChange={(event) => updateBand(index, { max: event.target.value === "" ? null : event.target.value })}/></label>
-          <label>图标<select value={band.icon} onChange={(event) => updateBand(index, { icon: event.target.value })}>{FINANCE_ICON_OPTIONS.map((icon) => <option key={icon} value={icon}>{icon}</option>)}</select></label>
-          <label>颜色<select value={band.tone} onChange={(event) => updateBand(index, { tone: event.target.value })}>{FINANCE_TONE_OPTIONS.map((tone) => <option key={tone.id} value={tone.id}>{tone.label}</option>)}</select></label>
-          <label className="wide">提示文字<input value={band.advice} maxLength={80} onChange={(event) => updateBand(index, { advice: event.target.value })}/></label>
-        </div>)}
-      </div>
-    </section>
-
-    <section className="fin-card">
-      <div className="fin-card-head"><div><em>STRATEGY ZONES</em><h2>投资策略参数（按指数点位）</h2><p>按点位区间给出状态和建议，学生端会自动高亮当前点位所在区间。下限留空表示"低于上限"，上限留空表示"高于下限"。</p></div></div>
-      <div className="fin-rows">
-        {settings.strategy_zones.map((zone, index) => <div className="fin-row" key={index}>
-          <label>点位下限<input type="number" min="0" step="100" placeholder="留空=更低" value={zone.min ?? ""} onChange={(event) => updateZone(index, { min: event.target.value === "" ? null : event.target.value })}/></label>
-          <label>点位上限<input type="number" min="0" step="100" placeholder="留空=更高" value={zone.max ?? ""} onChange={(event) => updateZone(index, { max: event.target.value === "" ? null : event.target.value })}/></label>
-          <label>市场状态<input value={zone.state} maxLength={12} onChange={(event) => updateZone(index, { state: event.target.value })}/></label>
-          <label>颜色<select value={zone.tone} onChange={(event) => updateZone(index, { tone: event.target.value })}>{FINANCE_TONE_OPTIONS.map((tone) => <option key={tone.id} value={tone.id}>{tone.label}</option>)}</select></label>
-          <label className="wide">策略文字<input value={zone.advice} maxLength={60} onChange={(event) => updateZone(index, { advice: event.target.value })}/></label>
-        </div>)}
-      </div>
-    </section>
-
-    <section className="fin-card">
-      <div className="fin-card-head"><div><em>MANUAL PE</em><h2>手动估值（可选）</h2><p>当外部接口拿不到实时 PE 时，可以手动录入当前纳斯达克100市盈率（参考雪球、Morningstar 等公开数据）。录入后学生端标注"管理员录入"；留空则使用模型估算并明确标注。</p></div></div>
-      <div className="fin-rows">
-        <div className="fin-row">
-          <label>当前 PE（倍）<input type="number" min="1" max="500" step="0.1" placeholder="留空=模型估算" value={settings.manual_pe?.value ?? ""} onChange={(event) => setSettings((current) => ({ ...current, manual_pe: event.target.value === "" ? null : { value: event.target.value, note: current.manual_pe?.note || "" } }))}/></label>
-          <label className="wide">备注（如数据来源）<input value={settings.manual_pe?.note || ""} maxLength={60} placeholder="例如：参考雪球指数估值，2026-07" onChange={(event) => setSettings((current) => ({ ...current, manual_pe: { value: current.manual_pe?.value || "", note: event.target.value } }))}/></label>
-        </div>
-      </div>
-    </section>
-
-    <div className="fin-actions">
-      <button className="publish" disabled={saving} onClick={save}><CheckCircle2/>{saving ? "正在保存…" : "保存财经设置"}</button>
-      <button className="danger" disabled={saving} onClick={resetDefaults}><RefreshCw/>恢复默认参数</button>
-    </div>
   </div>;
 }
 

@@ -10,7 +10,34 @@ const UP = "#15966f";
 const DOWN = "#d9545c";
 const SH_COLOR = "#b0722a";
 const formatNumber = (value, digits = 2) => Number(value).toLocaleString("zh-CN", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+const formatPercent = (value) => `${Number(value) > 0 ? "+" : ""}${Number(value).toFixed(2)}%`;
 const closeOf = (item) => Number(item.close ?? item.price);
+
+// X 轴：短周期显示 MM-DD，跨年或首个标签补年份；长周期显示 YYYY-MM
+function dateAxisFormatter(dates, dense) {
+  return (value, index) => {
+    const date = dates[index];
+    if (!date) return value;
+    if (dense) return date.slice(0, 7);
+    if (index === 0 || date.slice(0, 4) !== dates[index - 1]?.slice(0, 4)) return `${date.slice(0, 4)}年${date.slice(5)}`;
+    return date.slice(5);
+  };
+}
+
+function categoryAxis(dates) {
+  const dense = dates.length > 400;
+  return {
+    type: "category",
+    boundaryGap: false,
+    data: dates,
+    axisLine: { lineStyle: { color: "#dbe2eb" } },
+    axisLabel: { color: "#8490a1", hideOverlap: true, formatter: dateAxisFormatter(dates, dense) },
+  };
+}
+
+function valueAxis(formatter) {
+  return { type: "value", scale: true, splitNumber: 4, axisLabel: { color: "#8490a1", formatter: formatter || ((value) => Number(value).toLocaleString("zh-CN")) }, splitLine: { lineStyle: { color: "#edf1f5" } } };
+}
 
 function baseGrid() {
   return { left: 12, right: 18, top: 24, bottom: 48, containLabel: true };
@@ -23,22 +50,15 @@ function baseZoom() {
   ];
 }
 
-function categoryAxis(dates) {
-  return { type: "category", boundaryGap: false, data: dates, axisLine: { lineStyle: { color: "#dbe2eb" } }, axisLabel: { color: "#8490a1", hideOverlap: true } };
-}
-
-function valueAxis(color = "#8490a1") {
-  return { type: "value", scale: true, splitNumber: 4, axisLabel: { color, formatter: (value) => Number(value).toLocaleString("zh-CN") }, splitLine: { lineStyle: { color: "#edf1f5" } } };
-}
-
 function lineOption(ndx) {
+  const dates = ndx.map((item) => item.date);
   const prices = ndx.map(closeOf);
   const rising = prices.at(-1) >= prices[0];
   return {
     animationDuration: 500,
     grid: baseGrid(),
     tooltip: { trigger: "axis", valueFormatter: (value) => formatNumber(value) },
-    xAxis: categoryAxis(ndx.map((item) => item.date.slice(5))),
+    xAxis: categoryAxis(dates),
     yAxis: valueAxis(),
     dataZoom: baseZoom(),
     series: [{ type: "line", data: prices, showSymbol: false, smooth: 0.18, lineStyle: { width: 3, color: rising ? UP : DOWN }, areaStyle: { color: rising ? "rgba(21,150,111,.10)" : "rgba(217,84,92,.10)" } }],
@@ -46,6 +66,7 @@ function lineOption(ndx) {
 }
 
 function candleOption(ndx) {
+  const dates = ndx.map((item) => item.date);
   return {
     animationDuration: 500,
     grid: baseGrid(),
@@ -59,7 +80,7 @@ function candleOption(ndx) {
         return `${item.axisValue}<br/>开盘：${formatNumber(open)}<br/>收盘：${formatNumber(close)}<br/>最高：${formatNumber(high)}<br/>最低：${formatNumber(low)}`;
       },
     },
-    xAxis: { ...categoryAxis(ndx.map((item) => item.date.slice(5))), boundaryGap: true },
+    xAxis: { ...categoryAxis(dates), boundaryGap: true },
     yAxis: valueAxis(),
     dataZoom: baseZoom(),
     series: [{
@@ -70,6 +91,7 @@ function candleOption(ndx) {
   };
 }
 
+// 单 Y 轴对比：两指数统一按区间起点折算为涨跌幅，悬停显示真实点位
 function compareOption(ndx, sh) {
   const dateSet = new Set();
   ndx.forEach((item) => dateSet.add(item.date));
@@ -78,27 +100,38 @@ function compareOption(ndx, sh) {
   const ndxMap = new Map(ndx.map((item) => [item.date, closeOf(item)]));
   const shMap = new Map(sh.map((item) => [item.date, closeOf(item)]));
   const hasSh = sh.length > 0;
+  const baseOf = (map) => {
+    for (const date of dates) { const value = map.get(date); if (Number.isFinite(value) && value > 0) return value; }
+    return null;
+  };
+  const ndxBase = baseOf(ndxMap);
+  const shBase = baseOf(shMap);
+  const pctSeries = (map, base) => dates.map((date) => {
+    const value = map.get(date);
+    return Number.isFinite(value) && base ? (value / base - 1) * 100 : null;
+  });
   return {
     animationDuration: 500,
-    grid: { ...baseGrid(), right: 12 },
+    grid: baseGrid(),
     legend: { top: 0, right: 8, itemWidth: 14, textStyle: { color: "#5b6b82", fontSize: 11 }, data: hasSh ? ["纳斯达克100", "上证指数"] : ["纳斯达克100"] },
     tooltip: {
       trigger: "axis",
       formatter: (params) => {
         const lines = params.filter((param) => param.value !== null && param.value !== undefined && param.value !== "-")
-          .map((param) => `${param.marker}${param.seriesName}：${formatNumber(param.value)} 点`);
+          .map((param) => {
+            const map = param.seriesName === "上证指数" ? shMap : ndxMap;
+            const real = map.get(dates[param.dataIndex]);
+            return `${param.marker}${param.seriesName}：${formatPercent(param.value)}${Number.isFinite(real) ? `（${formatNumber(real)}点）` : ""}`;
+          });
         return lines.length ? `${params[0].axisValue}<br/>${lines.join("<br/>")}` : `${params[0]?.axisValue || ""}<br/>暂无数据`;
       },
     },
-    xAxis: categoryAxis(dates.map((date) => date.slice(5))),
-    yAxis: [
-      { ...valueAxis(), name: "纳指", nameTextStyle: { color: "#8490a1", fontSize: 10 } },
-      { ...valueAxis(SH_COLOR), name: "上证", nameTextStyle: { color: SH_COLOR, fontSize: 10 }, splitLine: { show: false } },
-    ],
+    xAxis: categoryAxis(dates),
+    yAxis: valueAxis((value) => `${Number(value).toFixed(0)}%`),
     dataZoom: baseZoom(),
     series: [
-      { name: "纳斯达克100", type: "line", yAxisIndex: 0, data: dates.map((date) => ndxMap.get(date) ?? null), connectNulls: true, showSymbol: false, smooth: 0.15, lineStyle: { width: 2.5, color: UP }, itemStyle: { color: UP } },
-      ...(hasSh ? [{ name: "上证指数", type: "line", yAxisIndex: 1, data: dates.map((date) => shMap.get(date) ?? null), connectNulls: true, showSymbol: false, smooth: 0.15, lineStyle: { width: 2.5, color: SH_COLOR }, itemStyle: { color: SH_COLOR } }] : []),
+      { name: "纳斯达克100", type: "line", data: pctSeries(ndxMap, ndxBase), connectNulls: true, showSymbol: false, smooth: 0.15, lineStyle: { width: 2.5, color: UP }, itemStyle: { color: UP } },
+      ...(hasSh ? [{ name: "上证指数", type: "line", data: pctSeries(shMap, shBase), connectNulls: true, showSymbol: false, smooth: 0.15, lineStyle: { width: 2.5, color: SH_COLOR }, itemStyle: { color: SH_COLOR } }] : []),
     ],
   };
 }
@@ -114,6 +147,6 @@ export default function NasdaqChart({ mode = "single", chartType = "line", ndx =
     window.addEventListener("resize", resize);
     return () => { window.removeEventListener("resize", resize); chart.dispose(); };
   }, [mode, chartType, ndx, sh]);
-  const label = mode === "compare" ? "纳斯达克100与上证指数历史走势对比图（双Y轴）" : chartType === "candle" ? "纳斯达克100历史K线图" : "纳斯达克100历史走势折线图";
+  const label = mode === "compare" ? "纳斯达克100与上证指数区间涨跌幅对比图（单Y轴）" : chartType === "candle" ? "纳斯达克100历史K线图" : "纳斯达克100历史走势折线图";
   return <div ref={container} className="nasdaq-chart" role="img" aria-label={label}/>;
 }

@@ -185,6 +185,7 @@ export default function FinancePage({ data, loading, error, onReload }) {
         <article><small>上证区间高/低</small><strong>{shStats ? `${number(shStats.high)} / ${number(shStats.low)}` : "暂无数据"}</strong><em className={Number(shStats?.change) > 0 ? "up" : Number(shStats?.change) < 0 ? "down" : ""}>累计 {percent(shStats?.change)}</em></article>
       </div>}
 
+      {chartMode === "compare" && <p className="chart-note">单轴对比：两指数统一按区间起点折算为涨跌幅，鼠标悬停可查看当日真实点位。</p>}
       {chartMode === "compare" && !shHistory.length && <div className="finance-chart-empty"><BarChart3/><p>上证指数数据暂不可用，仅展示纳斯达克100走势。</p></div>}
       {ndxSlice.length > 1
         ? <Suspense fallback={<div className="finance-chart-empty"><BarChart3/><p>正在加载走势图…</p></div>}>
@@ -225,7 +226,7 @@ export default function FinancePage({ data, loading, error, onReload }) {
             </article>;
           })}
         </div>
-        <p className="valuation-source">策略区间由管理员在后台维护，仅供参考，不构成投资建议。</p>
+        <p className="valuation-source">策略区间按固定参考标准划分，随指数点位自动匹配，仅供参考，不构成投资建议。</p>
       </section>
     </Collapsible>
 
