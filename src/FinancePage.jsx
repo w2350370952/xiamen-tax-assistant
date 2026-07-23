@@ -89,7 +89,7 @@ export default function FinancePage({ data, loading, error, onReload }) {
           <article><small>历史估值分位</small><strong>{Number.isFinite(Number(data?.pe_percentile))?`${number(data.pe_percentile,0)}%`:"积累中"}</strong></article>
         </div>
         <ValuationScale pe={data?.pe}/>
-        <p className="valuation-source">估值口径：{data?.pe_source || "等待估值数据"}。PE 代理值与指数官方口径可能存在差异。</p>
+        <p className="valuation-source">当前PE口径：{data?.pe_source || "等待估值数据"}；平均PE参考：{data?.pe_average_source || "样本积累中"}。PE 代理值与指数官方口径可能存在差异。</p>
       </section>
 
       <section className="finance-card strategy-card">
