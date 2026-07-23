@@ -12,6 +12,7 @@
     "@edgeone/pages-blob": "^0.0.14",
     "@tesseract.js-data/chi_sim": "^1.0.0",
     "@vitejs/plugin-react": "latest",
+    "echarts": "^6.1.0",
     "lucide-react": "latest",
     "pdfjs-dist": "^6.1.200",
     "react": "latest",
