@@ -648,6 +648,8 @@ async function fetchTwelveNdxOhlc() {
     twelveData("time_series", { symbol: "NDX", interval: "1day", outputsize: "2500", order: "ASC" }),
     twelveData("statistics", { symbol: "QQQ" }).catch(() => null),
   ]);
+  const returnedSymbol = text(quote.symbol || series.meta?.symbol, 20);
+  if (returnedSymbol && returnedSymbol !== "NDX") throw new Error(`标的校验失败：请求 NDX，返回 ${returnedSymbol}`);
   const values = Array.isArray(series.values) ? series.values : [];
   if (!values.length) throw new Error("Twelve Data 未返回纳斯达克100历史行情");
   const rows = values.map((item) => [
@@ -669,9 +671,11 @@ async function fetchTwelveNdxOhlc() {
   };
 }
 
-async function fetchEastmoneyOhlc(secid) {
+async function fetchEastmoneyOhlc(secid, expectedName) {
   const beg = `${new Date().getUTCFullYear() - 10}0101`;
   const data = await fetchJson(`https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${encodeURIComponent(secid)}&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55&klt=101&fqt=0&beg=${beg}&end=20500131`);
+  const returnedName = text(data?.data?.name, 30);
+  if (expectedName && returnedName && !returnedName.includes(expectedName)) throw new Error(`标的校验失败：要求${expectedName}，返回${returnedName}`);
   const klines = data?.data?.klines;
   if (!Array.isArray(klines) || !klines.length) throw new Error("东方财富未返回历史行情");
   const rows = klines.map((line) => {
@@ -698,6 +702,8 @@ async function fetchYahooOhlc(symbol, range = "10y") {
     try {
       const data = await fetchJson(`https://${host}/v8/finance/chart/${encoded}?range=${range}&interval=1d&events=history`);
       const result = data?.chart?.result?.[0];
+      const returnedSymbol = text(result?.meta?.symbol, 20);
+      if (returnedSymbol && returnedSymbol !== symbol) throw new Error(`标的校验失败：请求 ${symbol}，返回 ${returnedSymbol}`);
       const timestamps = result?.timestamp || [];
       const quote = result?.indicators?.quote?.[0] || {};
       const rows = timestamps.map((timestamp, index) => [
@@ -781,7 +787,7 @@ async function refreshMarket(cached, settings) {
   let realPe = null;
   const ndxSources = [];
   if (text(process.env.TWELVE_DATA_API_KEY, 200)) ndxSources.push(["Twelve Data", fetchTwelveNdxOhlc]);
-  ndxSources.push(["Yahoo Finance", () => fetchYahooOhlc("^NDX")], ["东方财富", () => fetchEastmoneyOhlc("100.NDX")]);
+  ndxSources.push(["Yahoo Finance", () => fetchYahooOhlc("^NDX")], ["东方财富", () => fetchEastmoneyOhlc("100.NDX", "纳斯达克100")]);
   const cachedNdxPrice = cached?.ndx?.price;
   for (const [name, fetcher] of ndxSources) {
     try {
@@ -801,7 +807,7 @@ async function refreshMarket(cached, settings) {
   if (!ndxSnapshot) throw new Error(`纳斯达克100行情源全部不可用（${errors.join("；")}）`);
   let shSnapshot = null;
   const cachedShPrice = cached?.shanghai?.price;
-  for (const [name, fetcher] of [["东方财富", () => fetchEastmoneyOhlc("1.000001")], ["Yahoo Finance", () => fetchYahooOhlc("000001.SS")]]) {
+  for (const [name, fetcher] of [["东方财富", () => fetchEastmoneyOhlc("1.000001", "上证指数")], ["Yahoo Finance", () => fetchYahooOhlc("000001.SS")]]) {
     try {
       const snapshot = await fetcher();
       if (cachedShPrice && snapshot?.price && Math.abs(snapshot.price / cachedShPrice - 1) > 0.08) {
@@ -859,6 +865,8 @@ function publicMarket(market, settings, stale = false) {
   const pe = market.pe?.value ?? null;
   const pePercentile = samples.length >= 20 && pe !== null ? samples.filter((value) => value <= pe).length / samples.length * 100 : null;
   return {
+    index_name: "NASDAQ-100 Index",
+    symbol: "NDX",
     price: market.ndx.price,
     change: market.ndx.change_percent,
     history: expandMarketRows(rows),
