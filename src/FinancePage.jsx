@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo, useState } from "react";
-import { Activity, AlertTriangle, ArrowRight, BarChart3, CandlestickChart, ChevronDown, Clock3, Gauge, Info, Landmark, LineChart, RefreshCw, ShieldAlert, Star, TrendingDown, TrendingUp } from "lucide-react";
+import { Activity, AlertTriangle, ArrowLeftRight, ArrowRight, BarChart3, CandlestickChart, ChevronDown, Clock3, Cpu, Gauge, Info, Landmark, LineChart, PiggyBank, RefreshCw, Scale, ShieldAlert, Star, Target, TrendingDown, TrendingUp, Users } from "lucide-react";
 
 const ranges = [
   { id: "1m", label: "1个月", days: 31 },
@@ -144,6 +144,8 @@ export default function FinancePage({ data, loading, error, onReload }) {
     {error && data && <div className="finance-stale"><AlertTriangle/><span>{error}</span></div>}
     {data?.stale && <div className="finance-stale"><Clock3/>外部行情源暂时不可用，当前显示最近一次有效数据{data?.update_time ? `（${formatTime(data.update_time, true)}）` : ""}。</div>}
 
+    <WhyInvestModule comparison={data?.comparison}/>
+
     <section className="finance-dashboard">
       <article className="dash-primary">
         <small>NASDAQ-100 INDEX · NDX</small>
@@ -262,6 +264,90 @@ export default function FinancePage({ data, loading, error, onReload }) {
 
     <div className="finance-risk"><ShieldAlert/><p><strong>风险提示</strong><span>本页面只提供行情展示和估值参考，不构成投资建议、收益承诺或价格预测。指数历史表现不代表未来结果。</span></p></div>
   </section>;
+}
+
+const wan = (value) => `${(value / 10000).toFixed(1).replace(/\.0$/, "")}万`;
+
+function WhyInvestModule({ comparison }) {
+  const rates = [6, 10, 14];
+  const compoundRows = [10, 20].map((years) => {
+    const months = years * 12;
+    return {
+      years,
+      principal: 1000 * months,
+      cells: rates.map((rate) => {
+        const r = rate / 100 / 12;
+        return { rate, fv: Math.round(1000 * ((Math.pow(1 + r, months) - 1) / r)) };
+      }),
+    };
+  });
+  const compareItems = [["纳斯达克100", "ndx"], ["上证指数", "shanghai"], ["沪深300", "csi300"]];
+  return <Collapsible eyebrow="INVESTMENT LOGIC" title="📈 为什么长期定投纳斯达克100？" icon={<TrendingUp/>} collapsedOnMobile>
+    <div className="why-module">
+      <p className="why-subtitle">基于长期经济增长、企业盈利能力和指数机制的投资逻辑。</p>
+      <div className="why-grid">
+        <article className="why-card">
+          <h3><Cpu/>美国科技企业盈利能力</h3>
+          <p>纳斯达克100包含大量全球领先科技企业：</p>
+          <div className="why-tags">{["Apple", "Microsoft", "NVIDIA", "Amazon", "Google"].map((name) => <span key={name}>{name}</span>)}</div>
+          <p>这些企业长期受益于：</p>
+          <div className="why-tags alt">{["科技创新", "数字化", "人工智能", "云计算"].map((name) => <span key={name}>{name}</span>)}</div>
+          <div className="why-key">核心逻辑：企业盈利增长推动指数长期上涨。</div>
+        </article>
+        <article className="why-card">
+          <h3><ArrowLeftRight/>指数优胜劣汰机制</h3>
+          <p>为什么指数适合长期投资？</p>
+          <ul>
+            <li>纳斯达克100会定期调整成分股</li>
+            <li>优秀企业权重提升</li>
+            <li>竞争力下降企业退出</li>
+          </ul>
+          <div className="why-key">相比单个股票：降低企业永久衰退风险。</div>
+        </article>
+        <article className="why-card">
+          <h3><PiggyBank/>长期复利优势</h3>
+          <p>每月投入1000元的简单模拟（仅为测算示例，不构成收益承诺）：</p>
+          <table className="why-table">
+            <thead><tr><th>期限</th><th>本金</th><th>年化6%</th><th>年化10%</th><th>年化14%</th></tr></thead>
+            <tbody>{compoundRows.map((row) => <tr key={row.years}><td>{row.years}年</td><td>{wan(row.principal)}</td>{row.cells.map((cell) => <td key={cell.rate}><strong>{wan(cell.fv)}</strong></td>)}</tr>)}</tbody>
+          </table>
+          <div className="why-key">长期收益主要来自：时间 + 持续投入 + 企业成长。</div>
+        </article>
+      </div>
+
+      <div className="why-section-title"><Scale/><h3>A股市场长期投资面临的一些挑战</h3></div>
+      <div className="why-grid">
+        <article className="why-card">
+          <h3><Users/>市场结构差异</h3>
+          <ul>
+            <li>A股市场散户占比较高，短期交易行为较多</li>
+            <li>行情容易受到情绪、政策预期、资金流动影响</li>
+          </ul>
+        </article>
+        <article className="why-card">
+          <h3><BarChart3/>指数长期收益差异</h3>
+          <table className="why-table compare-table">
+            <thead><tr><th>指数</th><th>累计收益</th><th>年化收益</th><th>最大回撤</th></tr></thead>
+            <tbody>{compareItems.map(([name, key]) => {
+              const stats = comparison?.[key];
+              return <tr key={key}><td>{name}</td>{stats
+                ? <><td className={stats.total > 0 ? "up" : "down"}>{percent(stats.total)}</td><td className={stats.annual > 0 ? "up" : "down"}>{percent(stats.annual)}</td><td className="down">{stats.max_drawdown.toFixed(1)}%</td></>
+                : <td colSpan={3} className="why-pending">数据计算中…</td>}</tr>;
+            })}</tbody>
+          </table>
+          <small className="why-note">按近10年真实行情计算 · 历史表现不代表未来收益</small>
+        </article>
+        <article className="why-card">
+          <h3><Target/>投资方式差异</h3>
+          <ul>
+            <li>A股很多投资者依靠择时、选股、热点交易，难度较高</li>
+            <li>宽基指数投资通过长期持有优秀企业组合，降低个体风险</li>
+          </ul>
+        </article>
+      </div>
+      <div className="why-disclaimer">投资观点仅用于学习交流。历史收益不代表未来表现。投资有风险，请结合个人情况独立判断。</div>
+    </div>
+  </Collapsible>;
 }
 
 function Collapsible({ eyebrow, title, icon, children, collapsedOnMobile = false }) {

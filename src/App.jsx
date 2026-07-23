@@ -75,7 +75,7 @@ function StudentApp(){
   const [menuMeal,setMenuMeal]=useState(mealForHour(initialBeijing.hour));
   const [menuMealManual,setMenuMealManual]=useState(false);
   const [menuSyncedAt,setMenuSyncedAt]=useState(null);
-  const [financeData,setFinanceData]=useState(null);
+  const [financeData,setFinanceData]=useState(()=>{try{const cached=JSON.parse(localStorage.getItem("xnai_finance_cache_v1"));return cached&&cached.price?cached:null;}catch{return null;}});
   const [financeLoading,setFinanceLoading]=useState(false);
   const [financeError,setFinanceError]=useState("");
   const menuRequestId=useRef(0);
@@ -104,8 +104,8 @@ function StudentApp(){
     window.addEventListener("focus",syncCourses);
     return()=>{clearInterval(courseTimer);document.removeEventListener("visibilitychange",onVisible);window.removeEventListener("focus",syncCourses);};
   },[major]);
-  const loadFinance=(force=false)=>{setFinanceLoading(true);setFinanceError("");return fetch(force?"/api/nasdaq100?refresh=manual":"/api/nasdaq100",{cache:"no-store"}).then(async response=>{const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.detail||"行情获取失败，请稍后重试");setFinanceData(data);}).catch(error=>{setFinanceError(financeData?"行情获取失败，请稍后重试（当前显示为最近一次有效数据）":(error.message||"行情获取失败，请稍后重试"));}).finally(()=>setFinanceLoading(false));};
-  useEffect(()=>{loadFinance();const timer=setInterval(()=>loadFinance(),300000);return()=>clearInterval(timer);},[]);
+  const loadFinance=(force=false,lite=false)=>{if(!lite)setFinanceLoading(true);setFinanceError("");const url=force?"/api/nasdaq100?refresh=manual":(lite?"/api/nasdaq100?lite=1":"/api/nasdaq100");return fetch(url,{cache:"no-store"}).then(async response=>{const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.detail||"行情获取失败，请稍后重试");setFinanceData(data);try{localStorage.setItem("xnai_finance_cache_v1",JSON.stringify(data));}catch{}}).catch(error=>{setFinanceError(financeData?"行情获取失败，请稍后重试（当前显示为最近一次有效数据）":(error.message||"行情获取失败，请稍后重试"));}).finally(()=>{if(!lite)setFinanceLoading(false);});};
+  useEffect(()=>{const cached=financeData;const first=cached?Promise.resolve():loadFinance(false,true);first.finally(()=>loadFinance());const timer=setInterval(()=>loadFinance(),300000);return()=>clearInterval(timer);},[]);
   const today=iso(now), todayCourses=courses.filter(c=>c.date===today);
   const courseTime=(course,field)=>new Date(`${course.date}T${course[field]||"00:00"}:00`).getTime();
   const passedCourses=courses.filter(course=>courseTime(course,"end_time")<=now.getTime()).length;

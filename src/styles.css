@@ -2869,3 +2869,32 @@ header p {
   .valuation-scale.v2 .seg span { font-size: 10px; }
   .finance-refresh-wrap { align-items: flex-start; }
 }
+
+/* ================= 定投逻辑模块 ================= */
+.why-module { background: #fff; border: 1px solid #e3e9f2; border-radius: 18px; padding: 20px; box-shadow: 0 10px 30px rgba(23, 51, 95, .06); }
+.why-subtitle { margin: 0 0 16px; color: #5b6b82; font-size: 13px; }
+.why-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.why-card { border: 1px solid #e8edf4; border-radius: 14px; padding: 16px; background: #fbfcfe; display: flex; flex-direction: column; gap: 10px; }
+.why-card h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; color: #152744; }
+.why-card h3 svg { width: 18px; color: #2f6fed; flex: 0 0 18px; }
+.why-card p { margin: 0; font-size: 12px; color: #5b6b82; line-height: 1.6; }
+.why-card ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.why-card ul li { font-size: 12px; color: #3c4c63; line-height: 1.6; }
+.why-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.why-tags span { font-size: 11px; font-weight: 700; color: #245da8; background: #eaf1ff; border-radius: 999px; padding: 4px 10px; }
+.why-tags.alt span { color: #147657; background: #e2f5ec; }
+.why-key { margin-top: auto; font-size: 12px; font-weight: 700; color: #17335f; background: #f0f5ff; border-left: 3px solid #2f6fed; border-radius: 6px; padding: 8px 10px; line-height: 1.5; }
+.why-table { width: 100%; border-collapse: collapse; }
+.why-table th { font-size: 11px; color: #8490a1; font-weight: 700; text-align: left; padding: 6px 4px; border-bottom: 1px solid #e8edf4; }
+.why-table td { font-size: 12px; color: #3c4c63; padding: 7px 4px; border-bottom: 1px solid #f0f3f8; }
+.why-table td strong { color: #17335f; }
+.why-table tr:last-child td { border-bottom: 0; }
+.why-table td.up, .why-table td.down { font-weight: 700; }
+.why-pending { color: #8490a1; text-align: center; }
+.why-note { font-size: 10px; color: #8490a1; }
+.why-section-title { display: flex; align-items: center; gap: 8px; margin: 20px 0 12px; padding-top: 16px; border-top: 1px dashed #e3e9f2; }
+.why-section-title svg { width: 18px; color: #2f6fed; }
+.why-section-title h3 { margin: 0; font-size: 15px; color: #152744; }
+.why-disclaimer { margin-top: 16px; font-size: 11px; color: #8490a1; background: #f7f9fc; border-radius: 10px; padding: 10px 14px; line-height: 1.7; }
+@media (max-width: 1000px) { .why-grid { grid-template-columns: 1fr; } }
+/* ================= 定投逻辑模块结束 ================= */

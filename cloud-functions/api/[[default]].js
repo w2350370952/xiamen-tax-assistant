@@ -553,6 +553,14 @@ function normalizeMarket(raw) {
       update_time: text(ndxSource.update_time, 30),
       history: normalizeMarketRows(ndxSource.history),
     },
+    csi300: source.csi300 && typeof source.csi300 === "object" ? {
+      price: finiteNumber(source.csi300.price),
+      change_percent: finiteNumber(source.csi300.change_percent),
+      quote_date: text(source.csi300.quote_date, 10),
+      source: text(source.csi300.source, 80),
+      update_time: text(source.csi300.update_time, 30),
+      history: normalizeMarketRows(source.csi300.history),
+    } : null,
     shanghai: shSource ? {
       price: finiteNumber(shSource.price),
       change_percent: finiteNumber(shSource.change_percent),
@@ -820,6 +828,21 @@ async function refreshMarket(cached, settings) {
       errors.push(`上证指数/${name}：${text(error?.message, 120)}`);
     }
   }
+  let csiSnapshot = null;
+  const cachedCsiPrice = cached?.csi300?.price;
+  for (const [name, fetcher] of [["东方财富", () => fetchEastmoneyOhlc("1.000300", "沪深300")], ["Yahoo Finance", () => fetchYahooOhlc("000300.SS")]]) {
+    try {
+      const snapshot = await fetcher();
+      if (cachedCsiPrice && snapshot?.price && Math.abs(snapshot.price / cachedCsiPrice - 1) > 0.08) {
+        errors.push(`沪深300/${name}：数据偏差异常，已自动切换`);
+        continue;
+      }
+      csiSnapshot = snapshot;
+      break;
+    } catch (error) {
+      errors.push(`沪深300/${name}：${text(error?.message, 120)}`);
+    }
+  }
   const now = new Date().toISOString();
   const next = {
     ...cached,
@@ -839,6 +862,14 @@ async function refreshMarket(cached, settings) {
       update_time: now,
       history: mergeMarketRows(cached.shanghai?.history, shSnapshot.rows, shSnapshot),
     } : cached.shanghai || null,
+    csi300: csiSnapshot ? {
+      price: csiSnapshot.price,
+      change_percent: csiSnapshot.change,
+      quote_date: csiSnapshot.quote_date,
+      source: csiSnapshot.source,
+      update_time: now,
+      history: mergeMarketRows(cached.csi300?.history, csiSnapshot.rows, csiSnapshot),
+    } : cached.csi300 || null,
     pe_samples: cached.pe_samples || [],
     earnings_anchor: cached.earnings_anchor || null,
   };
@@ -858,8 +889,35 @@ const changeFromRows = (rows, days) => {
 
 const expandMarketRows = (rows) => (Array.isArray(rows) ? rows : []).map(([date, open, high, low, close]) => ({ date, open, high, low, close, price: close }));
 
-function publicMarket(market, settings, stale = false) {
-  const rows = market.ndx.history || [];
+function comparisonStats(rows) {
+  if (!Array.isArray(rows) || rows.length < 200) return null;
+  const window = rows.slice(-2600);
+  const start = window[0][4];
+  const end = window.at(-1)[4];
+  if (!start || !end) return null;
+  const years = (new Date(`${window.at(-1)[0]}T12:00:00Z`) - new Date(`${window[0][0]}T12:00:00Z`)) / (365.25 * 86400000);
+  let peak = -Infinity;
+  let maxDrawdown = 0;
+  for (const row of window) {
+    const close = row[4];
+    if (close > peak) peak = close;
+    const drawdown = (close / peak - 1) * 100;
+    if (drawdown < maxDrawdown) maxDrawdown = drawdown;
+  }
+  return {
+    total: Math.round(((end / start - 1) * 100) * 10) / 10,
+    annual: Math.round(((Math.pow(end / start, 1 / years) - 1) * 100) * 10) / 10,
+    max_drawdown: Math.round(maxDrawdown * 10) / 10,
+    years: Math.round(years * 10) / 10,
+  };
+}
+
+function publicMarket(market, settings, stale = false, lite = false) {
+  const fullRows = market.ndx.history || [];
+  const rows = lite ? fullRows.slice(-400) : fullRows;
+  const trim = (index) => index ? { ...index, history: lite ? (index.history || []).slice(-400) : index.history } : null;
+  const shIndex = trim(market.shanghai);
+  const csiIndex = trim(market.csi300);
   const samples = (market.pe_samples || []).map(([, pe]) => pe).filter((value) => value > 0);
   const peAverage = samples.length >= 5 ? samples.reduce((sum, value) => sum + value, 0) / samples.length : LONG_RUN_PE;
   const pe = market.pe?.value ?? null;
@@ -885,11 +943,23 @@ function publicMarket(market, settings, stale = false) {
     update_time: market.ndx.update_time,
     source: market.ndx.source,
     stale,
-    shanghai: market.shanghai ? {
-      price: market.shanghai.price,
-      change: market.shanghai.change_percent,
-      update_time: market.shanghai.update_time,
-      history: expandMarketRows(market.shanghai.history),
+    lite,
+    comparison: {
+      ndx: comparisonStats(fullRows),
+      shanghai: comparisonStats(market.shanghai?.history),
+      csi300: comparisonStats(market.csi300?.history),
+    },
+    shanghai: shIndex ? {
+      price: shIndex.price,
+      change: shIndex.change_percent,
+      update_time: shIndex.update_time,
+      history: expandMarketRows(shIndex.history),
+    } : null,
+    csi300: csiIndex ? {
+      price: csiIndex.price,
+      change: csiIndex.change_percent,
+      update_time: csiIndex.update_time,
+      history: expandMarketRows(csiIndex.history),
     } : null,
     settings: {
       valuation_bands: settings.valuation_bands,
@@ -903,7 +973,7 @@ async function nasdaq100Response(url) {
   let cached = await readMarket();
   const force = Boolean(url?.searchParams?.get("refresh"));
   const age = cached.ndx?.update_time ? Date.now() - new Date(cached.ndx.update_time).getTime() : Infinity;
-  const needUpgrade = (cached.ndx?.history?.length || 0) < 1500 || !cached.shanghai;
+  const needUpgrade = (cached.ndx?.history?.length || 0) < 1500 || !cached.shanghai || !cached.csi300;
   let due = age > (newYorkMarketOpen() ? 60000 : 30 * 60000);
   if (needUpgrade && age > 15 * 60000) due = true;
   if (force || due || !cached.ndx?.price) {
@@ -912,10 +982,10 @@ async function nasdaq100Response(url) {
     } catch (error) {
       console.error("market-refresh", error);
       if (!cached.ndx?.price) return json({ detail: "行情暂时不可用，请稍后重试", update_time: cached.ndx?.update_time || null }, 503);
-      return json(publicMarket(cached, settings, true), 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
+      return json(publicMarket(cached, settings, true, url?.searchParams?.get("lite") === "1"), 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
     }
   }
-  return json(publicMarket(cached, settings, false), 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
+  return json(publicMarket(cached, settings, false, url?.searchParams?.get("lite") === "1"), 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
 }
 // ==================== 市场数据系统结束 ====================
 
