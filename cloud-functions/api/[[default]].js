@@ -986,7 +986,9 @@ function marketJson(payload, request) {
   const body = JSON.stringify(payload);
   const headers = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store, no-cache, must-revalidate", Vary: "Accept-Encoding" };
   const accept = request?.headers?.get?.("accept-encoding") || "";
-  if (body.length > 20000 && accept.includes("gzip")) {
+  const ua = request?.headers?.get?.("user-agent") || "";
+  const isBrowser = /mozilla|chrome|safari|edg|opera/i.test(ua);
+  if (body.length > 20000 && (accept.includes("gzip") || isBrowser)) {
     headers["Content-Encoding"] = "gzip";
     return new Response(gzipSync(Buffer.from(body)), { status: 200, headers });
   }
