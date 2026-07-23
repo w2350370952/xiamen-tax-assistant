@@ -6,6 +6,7 @@ const STATE_KEY = "course-state.json";
 const ANALYTICS_KEY = "anonymous-analytics-v1.json";
 const MENU_RATINGS_KEY = "menu-ratings-v1.json";
 const DEVICE_BEHAVIOR_KEY = "device-behavior-v1.json";
+const NASDAQ100_KEY = "nasdaq100-data-v1.json";
 const COOKIE = "xnai_admin";
 const ADMIN_USER = "xnaitax2025";
 const ADMIN_PASSWORD_SHA256 = "3d4a6df67e692969e3092a220365c136d761097075b504bea76c0b2858a22bb5";
@@ -431,6 +432,212 @@ async function recognizeMenuTable(imageBase64) {
 }
 
 const text = (value, max = 200) => String(value ?? "").trim().slice(0, max);
+const finiteNumber = (value) => {
+  const parsed = Number(String(value ?? "").replace(/[,%$]/g, ""));
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+function normalizeNasdaq100(raw) {
+  const history = (Array.isArray(raw?.history) ? raw.history : []).map((item) => ({
+    id: text(item.id, 80) || `ndx-${text(item.date, 10)}`,
+    date: text(item.date, 10),
+    price: finiteNumber(item.price),
+    change_percent: finiteNumber(item.change_percent),
+    pe_ratio: finiteNumber(item.pe_ratio),
+    created_time: text(item.created_time, 30),
+    update_time: text(item.update_time, 30),
+  })).filter((item) => /^20\d{2}-\d{2}-\d{2}$/.test(item.date) && item.price !== null)
+    .sort((a, b) => a.date.localeCompare(b.date)).slice(-500);
+  return {
+    price: finiteNumber(raw?.price),
+    change_percent: finiteNumber(raw?.change_percent),
+    pe_ratio: finiteNumber(raw?.pe_ratio),
+    pe_source: text(raw?.pe_source, 160),
+    source: text(raw?.source, 80),
+    update_time: text(raw?.update_time, 30),
+    history,
+    last_error: text(raw?.last_error, 240),
+  };
+}
+
+async function readNasdaq100() {
+  return normalizeNasdaq100(await store.get(NASDAQ100_KEY, { type: "json", consistency: "strong" }));
+}
+
+async function writeNasdaq100(data) {
+  await store.setJSON(NASDAQ100_KEY, normalizeNasdaq100(data), { cacheControl: "no-store" });
+}
+
+function newYorkMarketOpen(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  if (["Sat", "Sun"].includes(map.weekday)) return false;
+  const minute = Number(map.hour) * 60 + Number(map.minute);
+  return minute >= 570 && minute <= 960;
+}
+
+async function fetchJson(url, timeoutMs = 12000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json", "User-Agent": "xnaitax-finance/1.0" } });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data) throw new Error(`行情源返回 HTTP ${response.status}`);
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function twelveData(endpoint, parameters) {
+  const apiKey = text(process.env.TWELVE_DATA_API_KEY, 200);
+  if (!apiKey) throw new Error("Twelve Data API Key 尚未配置");
+  const query = new URLSearchParams({ ...parameters, apikey: apiKey });
+  const data = await fetchJson(`https://api.twelvedata.com/${endpoint}?${query}`);
+  if (data.status === "error" || data.code) throw new Error(text(data.message, 180) || "Twelve Data 请求失败");
+  return data;
+}
+
+function findTrailingPe(data) {
+  const candidates = [
+    data?.statistics?.valuations_metrics?.trailing_pe,
+    data?.valuations_metrics?.trailing_pe,
+    data?.statistics?.valuation_metrics?.trailing_pe,
+    data?.valuation_metrics?.trailing_pe,
+    data?.trailing_pe,
+  ];
+  return candidates.map(finiteNumber).find((value) => value !== null) ?? null;
+}
+
+async function fetchTwelveNasdaq100() {
+  const [quote, series, statistics] = await Promise.all([
+    twelveData("quote", { symbol: "NDX" }),
+    twelveData("time_series", { symbol: "NDX", interval: "1day", outputsize: "400", order: "ASC" }),
+    twelveData("statistics", { symbol: "QQQ" }).catch(() => null),
+  ]);
+  const values = Array.isArray(series.values) ? series.values : [];
+  if (!values.length) throw new Error("Twelve Data 未返回纳斯达克100历史行情");
+  const history = values.map((item) => ({ date: text(item.datetime, 10), price: finiteNumber(item.close) })).filter((item) => item.price !== null);
+  const price = finiteNumber(quote.close) ?? history.at(-1)?.price ?? null;
+  const change = finiteNumber(quote.percent_change) ?? (history.length > 1 ? (history.at(-1).price / history.at(-2).price - 1) * 100 : null);
+  if (price === null) throw new Error("Twelve Data 未返回有效点位");
+  return { price, change, history, quote_date: text(quote.datetime, 10) || history.at(-1)?.date, pe: findTrailingPe(statistics), source: "Twelve Data", pe_source: statistics ? "Invesco QQQ 跟踪基金 trailing PE（Twelve Data）" : "" };
+}
+
+async function fetchYahooNasdaq100() {
+  const data = await fetchJson("https://query1.finance.yahoo.com/v8/finance/chart/%5ENDX?range=1y&interval=1d&events=history");
+  const result = data?.chart?.result?.[0];
+  const timestamps = result?.timestamp || [], closes = result?.indicators?.quote?.[0]?.close || [];
+  const history = timestamps.map((timestamp, index) => ({
+    date: new Date(timestamp * 1000).toISOString().slice(0, 10),
+    price: finiteNumber(closes[index]),
+  })).filter((item) => item.price !== null);
+  const price = finiteNumber(result?.meta?.regularMarketPrice) ?? history.at(-1)?.price ?? null;
+  const quoteDate = result?.meta?.regularMarketTime ? new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(result.meta.regularMarketTime * 1000)) : history.at(-1)?.date;
+  const lastIndex = history.at(-1)?.date === quoteDate ? history.length - 2 : history.length - 1;
+  const previous = history[lastIndex]?.price ?? null;
+  if (price === null) throw new Error("备用行情源未返回有效点位");
+  return { price, change: previous ? (price / previous - 1) * 100 : null, history, quote_date: quoteDate, pe: null, source: "Yahoo Finance chart fallback", pe_source: "" };
+}
+
+function mergeNasdaqHistory(existing, fetched, snapshot) {
+  const byDate = new Map(existing.map((item) => [item.date, item]));
+  const now = new Date().toISOString();
+  for (const item of fetched) {
+    const old = byDate.get(item.date);
+    byDate.set(item.date, {
+      id: old?.id || `ndx-${item.date}`,
+      date: item.date,
+      price: item.price,
+      change_percent: old?.change_percent ?? null,
+      pe_ratio: old?.pe_ratio ?? null,
+      created_time: old?.created_time || now,
+      update_time: now,
+    });
+  }
+  const marketDate = snapshot.quote_date || snapshot.history.at(-1)?.date || new Date().toISOString().slice(0, 10);
+  const old = byDate.get(marketDate);
+  byDate.set(marketDate, {
+    id: old?.id || `ndx-${marketDate}`,
+    date: marketDate,
+    price: snapshot.price,
+    change_percent: snapshot.change,
+    pe_ratio: snapshot.pe ?? old?.pe_ratio ?? null,
+    created_time: old?.created_time || now,
+    update_time: now,
+  });
+  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date)).slice(-500);
+}
+
+async function refreshNasdaq100(cached) {
+  let snapshot;
+  let primaryError = "";
+  try {
+    snapshot = await fetchTwelveNasdaq100();
+  } catch (error) {
+    primaryError = text(error?.message, 180);
+    snapshot = await fetchYahooNasdaq100();
+  }
+  const now = new Date().toISOString();
+  const next = {
+    price: snapshot.price,
+    change_percent: snapshot.change,
+    pe_ratio: snapshot.pe ?? cached.pe_ratio,
+    pe_source: snapshot.pe_source || cached.pe_source,
+    source: snapshot.source,
+    update_time: now,
+    history: mergeNasdaqHistory(cached.history, snapshot.history, snapshot),
+    last_error: primaryError,
+  };
+  await writeNasdaq100(next);
+  return normalizeNasdaq100(next);
+}
+
+const changeFromHistory = (history, days) => {
+  const end = history.at(-1);
+  if (!end) return null;
+  const cutoff = new Date(`${end.date}T12:00:00Z`).getTime() - days * 86400000;
+  const start = history.find((item) => new Date(`${item.date}T12:00:00Z`).getTime() >= cutoff) || history[0];
+  return start?.price ? (end.price / start.price - 1) * 100 : null;
+};
+
+function publicNasdaq100(data, stale = false) {
+  const peSamples = data.history.map((item) => item.pe_ratio).filter((value) => value !== null);
+  const peAverage = peSamples.length >= 5 ? peSamples.reduce((sum, value) => sum + value, 0) / peSamples.length : 24.25;
+  const pePercentile = peSamples.length >= 20 && data.pe_ratio !== null ? peSamples.filter((value) => value <= data.pe_ratio).length / peSamples.length * 100 : null;
+  return {
+    price: data.price,
+    change: data.change_percent,
+    history: data.history.map((item) => ({ date: item.date, price: item.price, change_percent: item.change_percent, pe_ratio: item.pe_ratio })),
+    performance: { month_1: changeFromHistory(data.history, 31), month_3: changeFromHistory(data.history, 93), half_year: changeFromHistory(data.history, 186), year_1: changeFromHistory(data.history, 370) },
+    pe: data.pe_ratio,
+    pe_average: peAverage,
+    pe_percentile: pePercentile,
+    pe_source: data.pe_source,
+    pe_average_source: peSamples.length >= 5 ? "本站已保存样本" : "Nasdaq 2006–2021 历史研究均值",
+    update_time: data.update_time,
+    source: data.source,
+    stale,
+  };
+}
+
+async function nasdaq100Response(url) {
+  let cached = await readNasdaq100();
+  const age = cached.update_time ? Date.now() - new Date(cached.update_time).getTime() : Infinity;
+  const due = age > (newYorkMarketOpen() ? 45 * 60000 : 6 * 3600000);
+  if (due || !cached.price) {
+    try {
+      cached = await refreshNasdaq100(cached);
+    } catch (error) {
+      console.error("nasdaq100-refresh", error);
+      if (!cached.price) return json({ detail: "纳斯达克100行情暂时不可用，请稍后重试", update_time: cached.update_time || null }, 503);
+      cached.last_error = text(error?.message, 180);
+      return json(publicNasdaq100(cached, true), 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
+    }
+  }
+  return json(publicNasdaq100(cached, Boolean(cached.last_error && cached.source !== "Twelve Data")), 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
+}
+
 function sanitizeCourse(input, fallbackId = null) {
   return {
     id: text(input.id, 120) || fallbackId || randomUUID(),
@@ -962,6 +1169,7 @@ export async function onRequest({ request }) {
     if (path === "/api/analytics/visit" && request.method === "POST") return await recordAnonymousVisit(request);
     if (path === "/api/analytics/action" && request.method === "POST") return await recordUserAction(request);
     if (path === "/api/menu-vote" && request.method === "POST") return await voteMenuDish(request);
+    if (path === "/api/nasdaq100" && request.method === "GET") return await nasdaq100Response(url);
     if ((path === "/api/live-courses" || path.startsWith("/api/live-courses/") || path === "/api/courses") && request.method === "GET") {
       const state = await readState();
       const pathMajor = path.startsWith("/api/live-courses/") ? decodeURIComponent(path.slice("/api/live-courses/".length)) : null;
