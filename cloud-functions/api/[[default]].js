@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import { getStore } from "@edgeone/pages-blob";
 
 const store = getStore("xiamen-tax-assistant");
@@ -583,7 +584,10 @@ function normalizeMarket(raw) {
   };
 }
 
+let marketMemCache = { time: 0, data: null };
+
 async function readMarket() {
+  if (marketMemCache.data && Date.now() - marketMemCache.time < 30000) return marketMemCache.data;
   let stored = await store.get(MARKET_KEY, { type: "json", consistency: "strong" });
   if (!stored) {
     // 首次升级：从旧版纳斯达克100缓存迁移已有历史数据
@@ -603,10 +607,13 @@ async function readMarket() {
       };
     }
   }
-  return normalizeMarket(stored);
+  const normalized = normalizeMarket(stored);
+  marketMemCache = { time: Date.now(), data: normalized };
+  return normalized;
 }
 
 async function writeMarket(data) {
+  marketMemCache = { time: 0, data: null };
   await store.setJSON(MARKET_KEY, normalizeMarket(data), { cacheControl: "no-store" });
 }
 
@@ -975,7 +982,18 @@ function publicMarket(market, settings, stale = false, lite = false) {
   };
 }
 
-async function nasdaq100Response(url, waitUntil) {
+function marketJson(payload, request) {
+  const body = JSON.stringify(payload);
+  const headers = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store, no-cache, must-revalidate", Vary: "Accept-Encoding" };
+  const accept = request?.headers?.get?.("accept-encoding") || "";
+  if (body.length > 20000 && accept.includes("gzip")) {
+    headers["Content-Encoding"] = "gzip";
+    return new Response(gzipSync(Buffer.from(body)), { status: 200, headers });
+  }
+  return new Response(body, { status: 200, headers });
+}
+
+async function nasdaq100Response(url, waitUntil, request) {
   const settings = await readFinanceSettings();
   let cached = await readMarket();
   const force = Boolean(url?.searchParams?.get("refresh"));
@@ -988,7 +1006,7 @@ async function nasdaq100Response(url, waitUntil) {
     if (due && typeof waitUntil === "function") {
       waitUntil(refreshMarket(cached, settings).catch((error) => console.error("market-refresh-bg", error)));
     }
-    return json(publicMarket(cached, settings, age > 2 * 3600000, url?.searchParams?.get("lite") === "1"), 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
+    return marketJson(publicMarket(cached, settings, age > 2 * 3600000, url?.searchParams?.get("lite") === "1"), request);
   }
   if (force || due || !cached.ndx?.price) {
     try {
@@ -996,10 +1014,10 @@ async function nasdaq100Response(url, waitUntil) {
     } catch (error) {
       console.error("market-refresh", error);
       if (!cached.ndx?.price) return json({ detail: "行情暂时不可用，请稍后重试", update_time: cached.ndx?.update_time || null }, 503);
-      return json(publicMarket(cached, settings, true, url?.searchParams?.get("lite") === "1"), 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
+      return marketJson(publicMarket(cached, settings, true, url?.searchParams?.get("lite") === "1"), request);
     }
   }
-  return json(publicMarket(cached, settings, false, url?.searchParams?.get("lite") === "1"), 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
+  return marketJson(publicMarket(cached, settings, false, url?.searchParams?.get("lite") === "1"), request);
 }
 // ==================== 市场数据系统结束 ====================
 
@@ -1536,7 +1554,7 @@ export async function onRequest(context) {
     if (path === "/api/analytics/visit" && request.method === "POST") return await recordAnonymousVisit(request);
     if (path === "/api/analytics/action" && request.method === "POST") return await recordUserAction(request);
     if (path === "/api/menu-vote" && request.method === "POST") return await voteMenuDish(request);
-    if (path === "/api/nasdaq100" && request.method === "GET") return await nasdaq100Response(url, typeof waitUntilFn === "function" ? waitUntilFn : null);
+    if (path === "/api/nasdaq100" && request.method === "GET") return await nasdaq100Response(url, typeof waitUntilFn === "function" ? waitUntilFn : null, request);
     if ((path === "/api/live-courses" || path.startsWith("/api/live-courses/") || path === "/api/courses") && request.method === "GET") {
       const state = await readState();
       const pathMajor = path.startsWith("/api/live-courses/") ? decodeURIComponent(path.slice("/api/live-courses/".length)) : null;
