@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo, useState } from "react";
-import { Activity, AlertTriangle, ArrowLeftRight, ArrowRight, BarChart3, CandlestickChart, ChevronDown, Clock3, Cpu, Gauge, Info, Landmark, LineChart, PiggyBank, RefreshCw, Scale, ShieldAlert, Star, Target, TrendingDown, TrendingUp, Users } from "lucide-react";
+import { Activity, AlertTriangle, ArrowLeftRight, BarChart3, CalendarDays, CandlestickChart, ChevronDown, Clock3, Cpu, Gauge, Info, Landmark, LineChart, PiggyBank, RefreshCw, Scale, ShieldAlert, Star, Target, TrendingDown, TrendingUp, Users } from "lucide-react";
 
 const ranges = [
   { id: "1m", label: "1个月", days: 31 },
@@ -107,23 +107,6 @@ export function valuationState(pe, bands = fallbackBands) {
   const band = bandOf(bands, pe);
   if (!band) return { label: "估值数据待更新", tone: "neutral", icon: "⚪" };
   return { label: band.label, tone: band.tone, icon: band.icon };
-}
-
-export function FinanceShortcut({ data, loading, onOpen }) {
-  const bands = data?.settings?.valuation_bands || fallbackBands;
-  const valuation = valuationState(data?.pe, bands);
-  const change = Number(data?.change);
-  return <aside className="finance-shortcut">
-    <div className="finance-shortcut-title"><span>📈</span><div><small>FINANCE</small><h2>财经</h2></div></div>
-    <div className="finance-shortcut-index">
-      <span>纳斯达克100</span>
-      <strong>{loading && !data ? "加载中…" : number(data?.price)}</strong>
-      <em className={change > 0 ? "up" : change < 0 ? "down" : ""}>{percent(data?.change)}</em>
-    </div>
-    <div className={`valuation-chip ${valuation.tone}`}>{valuation.icon} {valuation.label}</div>
-    <small className="finance-shortcut-time">{data?.update_time ? `更新于 ${formatTime(data.update_time)}` : "等待首次行情更新"}</small>
-    <button onClick={onOpen}>查看详情<ArrowRight /></button>
-  </aside>;
 }
 
 export default function FinancePage({ data, loading, error, onReload }) {
@@ -269,6 +252,10 @@ export default function FinancePage({ data, loading, error, onReload }) {
       </section>
     </Collapsible>
 
+    <Collapsible eyebrow="ANNUAL RETURNS" title="纳斯达克100历年涨跌" icon={<CalendarDays/>} collapsedOnMobile>
+      <AnnualReturns history={history}/>
+    </Collapsible>
+
     <Collapsible eyebrow="ABOUT NDX" title="关于纳斯达克100" icon={<Info/>} collapsedOnMobile>
       <section className="finance-card intro-card flat">
         <div className="intro-grid">
@@ -367,6 +354,46 @@ function WhyInvestModule({ comparison }) {
       <div className="why-disclaimer">投资观点仅用于学习交流。历史收益不代表未来表现。投资有风险，请结合个人情况独立判断。</div>
     </div>
   </Collapsible>;
+}
+
+// 1986–2025 年度涨跌幅（按公开年度数据整理，约数）；2026 年为实时行情计算的至今涨跌幅
+const annualReturns = [
+  [1986, 6.9], [1987, 10.5], [1988, 13.5], [1989, 26.2], [1990, -10.4],
+  [1991, 65.0], [1992, 8.9], [1993, 10.6], [1994, 1.5], [1995, 42.5],
+  [1996, 42.5], [1997, 20.6], [1998, 85.3], [1999, 102.0], [2000, -36.8],
+  [2001, -32.7], [2002, -37.6], [2003, 49.1], [2004, 10.4], [2005, 19.2],
+  [2006, 6.8], [2007, 18.7], [2008, -41.9], [2009, 53.5], [2010, 19.2],
+  [2011, 2.7], [2012, 16.8], [2013, 35.0], [2014, 17.9], [2015, 8.4],
+  [2016, 5.9], [2017, 31.5], [2018, -1.0], [2019, 38.0], [2020, 47.6],
+  [2021, 26.6], [2022, -33.0], [2023, 53.8], [2024, 24.9], [2025, 20.2],
+];
+
+function AnnualReturns({ history }) {
+  const ups = annualReturns.filter(([, value]) => value > 0).length;
+  const downs = annualReturns.length - ups;
+  const best = annualReturns.reduce((a, b) => (b[1] > a[1] ? b : a));
+  const worst = annualReturns.reduce((a, b) => (b[1] < a[1] ? b : a));
+  const currentYear = new Date().getFullYear();
+  const yearRows = (Array.isArray(history) ? history : []).filter((item) => item.date?.startsWith(String(currentYear)));
+  const ytd = yearRows.length > 1 ? (Number(yearRows.at(-1).close ?? yearRows.at(-1).price) / Number(yearRows[0].close ?? yearRows[0].price) - 1) * 100 : null;
+  return <section className="finance-card annual-card flat">
+    <div className="finance-card-head"><div><small>ANNUAL RETURNS</small><h2>历年年度涨跌幅（1986 至今）</h2></div></div>
+    <div className="annual-summary">
+      <article><small>上涨年份</small><strong className="up">{ups} 年</strong><em>占比 {Math.round(ups / annualReturns.length * 100)}%</em></article>
+      <article><small>下跌年份</small><strong className="down">{downs} 年</strong><em>集中于危机时期</em></article>
+      <article><small>最大涨幅</small><strong className="up">+{best[1]}%</strong><em>{best[0]} 年</em></article>
+      <article><small>最大跌幅</small><strong className="down">{worst[1]}%</strong><em>{worst[0]} 年</em></article>
+    </div>
+    <div className="annual-grid">
+      {annualReturns.map(([year, value]) => <div key={year} className={`year-tile ${value >= 0 ? "up" : "down"}`} title={`${year}年 ${value >= 0 ? "+" : ""}${value}%`}>
+        <b>{year}</b><span>{value >= 0 ? "+" : ""}{value}%</span>
+      </div>)}
+      <div className={`year-tile ytd ${ytd !== null && ytd < 0 ? "down" : "up"}`} title={`${currentYear}年至今${ytd !== null ? percent(ytd) : "数据计算中"}`}>
+        <b>{currentYear}</b><span>{ytd !== null ? percent(ytd) : "计算中"}</span><em>今年</em>
+      </div>
+    </div>
+    <p className="valuation-source">1986–2025 年数据按公开年度行情整理（约数）；{currentYear} 年为本站实时行情计算的至今涨跌幅。历史表现不代表未来收益。</p>
+  </section>;
 }
 
 function Collapsible({ eyebrow, title, icon, children, collapsedOnMobile = false }) {
