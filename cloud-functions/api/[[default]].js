@@ -439,7 +439,7 @@ const finiteNumber = (value) => {
 };
 
 // ==================== 市场数据系统（纳斯达克100 + 上证指数） ====================
-const MARKET_KEY = "market-data-v2.json";
+const MARKET_KEY = "market-data-v3.json";
 const MARKET_HISTORY_LIMIT = 2600;
 const LONG_RUN_PE = 24.25;
 const FINANCE_TONES = ["low", "fair", "elevated", "high", "deep"];
@@ -781,10 +781,17 @@ async function refreshMarket(cached, settings) {
   let realPe = null;
   const ndxSources = [];
   if (text(process.env.TWELVE_DATA_API_KEY, 200)) ndxSources.push(["Twelve Data", fetchTwelveNdxOhlc]);
-  ndxSources.push(["东方财富", () => fetchEastmoneyOhlc("100.NDX")], ["Yahoo Finance", () => fetchYahooOhlc("^NDX")]);
+  ndxSources.push(["Yahoo Finance", () => fetchYahooOhlc("^NDX")], ["东方财富", () => fetchEastmoneyOhlc("100.NDX")]);
+  const cachedNdxPrice = cached?.ndx?.price;
   for (const [name, fetcher] of ndxSources) {
     try {
-      ndxSnapshot = await fetcher();
+      const snapshot = await fetcher();
+      // 偏差守卫：与缓存点位偏差超8%视为口径异常，拒绝该源并切换下一个
+      if (cachedNdxPrice && snapshot?.price && Math.abs(snapshot.price / cachedNdxPrice - 1) > 0.08) {
+        errors.push(`${name}：数据偏差异常，已自动切换`);
+        continue;
+      }
+      ndxSnapshot = snapshot;
       if (ndxSnapshot?.pe) realPe = ndxSnapshot.pe;
       break;
     } catch (error) {
@@ -793,9 +800,15 @@ async function refreshMarket(cached, settings) {
   }
   if (!ndxSnapshot) throw new Error(`纳斯达克100行情源全部不可用（${errors.join("；")}）`);
   let shSnapshot = null;
+  const cachedShPrice = cached?.shanghai?.price;
   for (const [name, fetcher] of [["东方财富", () => fetchEastmoneyOhlc("1.000001")], ["Yahoo Finance", () => fetchYahooOhlc("000001.SS")]]) {
     try {
-      shSnapshot = await fetcher();
+      const snapshot = await fetcher();
+      if (cachedShPrice && snapshot?.price && Math.abs(snapshot.price / cachedShPrice - 1) > 0.08) {
+        errors.push(`上证指数/${name}：数据偏差异常，已自动切换`);
+        continue;
+      }
+      shSnapshot = snapshot;
       break;
     } catch (error) {
       errors.push(`上证指数/${name}：${text(error?.message, 120)}`);
