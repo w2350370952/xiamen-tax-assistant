@@ -438,35 +438,171 @@ const finiteNumber = (value) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-function normalizeNasdaq100(raw) {
-  const history = (Array.isArray(raw?.history) ? raw.history : []).map((item) => ({
-    id: text(item.id, 80) || `ndx-${text(item.date, 10)}`,
-    date: text(item.date, 10),
-    price: finiteNumber(item.price),
-    change_percent: finiteNumber(item.change_percent),
-    pe_ratio: finiteNumber(item.pe_ratio) > 0 ? finiteNumber(item.pe_ratio) : null,
-    created_time: text(item.created_time, 30),
-    update_time: text(item.update_time, 30),
-  })).filter((item) => /^20\d{2}-\d{2}-\d{2}$/.test(item.date) && item.price !== null)
-    .sort((a, b) => a.date.localeCompare(b.date)).slice(-500);
+// ==================== 市场数据系统（纳斯达克100 + 上证指数） ====================
+const MARKET_KEY = "market-data-v2.json";
+const FINANCE_SETTINGS_KEY = "finance-settings-v1.json";
+const MARKET_HISTORY_LIMIT = 2600;
+const LONG_RUN_PE = 24.25;
+const FINANCE_TONES = ["low", "fair", "elevated", "high", "deep"];
+
+const DEFAULT_FINANCE_SETTINGS = {
+  valuation_bands: [
+    { max: 25, label: "低估", icon: "🟢", tone: "low", advice: "估值处于低位，保持定投的同时可关注分批布局机会。" },
+    { max: 35, label: "合理", icon: "🟡", tone: "fair", advice: "估值处于合理区间，保持正常定投节奏。" },
+    { max: 45, label: "偏高估", icon: "🟠", tone: "elevated", advice: "保持正常定投，不建议一次性大额买入。" },
+    { max: null, label: "高估", icon: "🔴", tone: "high", advice: "估值处于高位，建议控制投入节奏，保留现金应对波动。" },
+  ],
+  strategy_zones: [
+    { min: 29000, max: null, state: "估值偏高", advice: "正常定投，不建议大额买入", tone: "elevated" },
+    { min: 27000, max: 29000, state: "正常调整", advice: "增加20%定投", tone: "fair" },
+    { min: 25000, max: 27000, state: "机会区域", advice: "增加50%定投", tone: "low" },
+    { min: 22000, max: 25000, state: "明显低估", advice: "分批增加仓位", tone: "low" },
+    { min: null, max: 22000, state: "历史极端机会", advice: "考虑大额买入", tone: "deep" },
+  ],
+  manual_pe: null,
+};
+
+function sanitizeValuationBands(raw) {
+  const source = Array.isArray(raw) && raw.length ? raw : DEFAULT_FINANCE_SETTINGS.valuation_bands;
+  const bands = source.slice(0, 6).map((band, index) => {
+    const fallback = DEFAULT_FINANCE_SETTINGS.valuation_bands[Math.min(index, DEFAULT_FINANCE_SETTINGS.valuation_bands.length - 1)];
+    const max = band?.max === null || band?.max === "" || band?.max === undefined ? null : finiteNumber(band.max);
+    return {
+      max: max !== null && max > 0 ? max : null,
+      label: text(band?.label, 8) || fallback.label,
+      icon: text(band?.icon, 4) || fallback.icon,
+      tone: FINANCE_TONES.includes(band?.tone) ? band.tone : fallback.tone,
+      advice: text(band?.advice, 80) || fallback.advice,
+    };
+  }).filter((band) => band.label);
+  if (bands.length < 2) return DEFAULT_FINANCE_SETTINGS.valuation_bands;
+  return bands.sort((a, b) => (a.max ?? Infinity) - (b.max ?? Infinity));
+}
+
+function sanitizeStrategyZones(raw) {
+  const source = Array.isArray(raw) && raw.length ? raw : DEFAULT_FINANCE_SETTINGS.strategy_zones;
+  const zones = source.slice(0, 8).map((zone, index) => {
+    const fallback = DEFAULT_FINANCE_SETTINGS.strategy_zones[Math.min(index, DEFAULT_FINANCE_SETTINGS.strategy_zones.length - 1)];
+    const min = zone?.min === null || zone?.min === "" || zone?.min === undefined ? null : finiteNumber(zone.min);
+    const max = zone?.max === null || zone?.max === "" || zone?.max === undefined ? null : finiteNumber(zone.max);
+    return {
+      min: min !== null && min >= 0 ? min : null,
+      max: max !== null && max > 0 ? max : null,
+      state: text(zone?.state, 12) || fallback.state,
+      advice: text(zone?.advice, 60) || fallback.advice,
+      tone: FINANCE_TONES.includes(zone?.tone) ? zone.tone : fallback.tone,
+    };
+  }).filter((zone) => zone.state && (zone.min !== null || zone.max !== null));
+  if (zones.length < 2) return DEFAULT_FINANCE_SETTINGS.strategy_zones;
+  return zones.sort((a, b) => (b.max ?? Infinity) - (a.max ?? Infinity) || (b.min ?? -Infinity) - (a.min ?? -Infinity));
+}
+
+function sanitizeFinanceSettings(raw) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const manualValue = finiteNumber(source.manual_pe?.value ?? source.manual_pe);
   return {
-    price: finiteNumber(raw?.price),
-    change_percent: finiteNumber(raw?.change_percent),
-    pe_ratio: finiteNumber(raw?.pe_ratio) > 0 ? finiteNumber(raw?.pe_ratio) : null,
-    pe_source: text(raw?.pe_source, 160),
-    source: text(raw?.source, 80),
-    update_time: text(raw?.update_time, 30),
-    history,
-    last_error: text(raw?.last_error, 240),
+    valuation_bands: sanitizeValuationBands(source.valuation_bands),
+    strategy_zones: sanitizeStrategyZones(source.strategy_zones),
+    manual_pe: manualValue !== null && manualValue > 0 && manualValue < 500
+      ? { value: manualValue, note: text(source.manual_pe?.note, 60), update_time: text(source.manual_pe?.update_time, 30) || new Date().toISOString() }
+      : null,
   };
 }
 
-async function readNasdaq100() {
-  return normalizeNasdaq100(await store.get(NASDAQ100_KEY, { type: "json", consistency: "strong" }));
+async function readFinanceSettings() {
+  const stored = await store.get(FINANCE_SETTINGS_KEY, { type: "json", consistency: "strong" });
+  return sanitizeFinanceSettings(stored || DEFAULT_FINANCE_SETTINGS);
 }
 
-async function writeNasdaq100(data) {
-  await store.setJSON(NASDAQ100_KEY, normalizeNasdaq100(data), { cacheControl: "no-store" });
+async function writeFinanceSettings(settings) {
+  await store.setJSON(FINANCE_SETTINGS_KEY, sanitizeFinanceSettings(settings), { cacheControl: "no-store" });
+}
+
+function normalizeMarketRows(rows, limit = MARKET_HISTORY_LIMIT) {
+  const byDate = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const date = text(Array.isArray(row) ? row[0] : row?.date, 10);
+    if (!/^20\d{2}-\d{2}-\d{2}$/.test(date)) continue;
+    const open = finiteNumber(Array.isArray(row) ? row[1] : row?.open);
+    const high = finiteNumber(Array.isArray(row) ? row[2] : row?.high);
+    const low = finiteNumber(Array.isArray(row) ? row[3] : row?.low);
+    const close = finiteNumber(Array.isArray(row) ? row[4] : (Array.isArray(row) ? undefined : row?.close ?? row?.price));
+    if (close === null) continue;
+    byDate.set(date, [date, open ?? close, high ?? close, low ?? close, close]);
+  }
+  return [...byDate.values()].sort((a, b) => a[0].localeCompare(b[0])).slice(-limit);
+}
+
+function normalizePeSamples(raw) {
+  const byDate = new Map();
+  for (const item of Array.isArray(raw) ? raw : []) {
+    const date = text(Array.isArray(item) ? item[0] : item?.date, 10);
+    const pe = finiteNumber(Array.isArray(item) ? item[1] : item?.pe);
+    if (/^20\d{2}-\d{2}-\d{2}$/.test(date) && pe !== null && pe > 0 && pe < 500) byDate.set(date, pe);
+  }
+  return [...byDate.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-400);
+}
+
+function normalizeMarket(raw) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const ndxSource = source.ndx && typeof source.ndx === "object" ? source.ndx : {};
+  const shSource = source.shanghai && typeof source.shanghai === "object" ? source.shanghai : null;
+  const anchor = source.earnings_anchor && typeof source.earnings_anchor === "object" ? source.earnings_anchor : null;
+  const pe = source.pe && typeof source.pe === "object" ? source.pe : {};
+  return {
+    ndx: {
+      price: finiteNumber(ndxSource.price),
+      change_percent: finiteNumber(ndxSource.change_percent),
+      quote_date: text(ndxSource.quote_date, 10),
+      source: text(ndxSource.source, 80),
+      update_time: text(ndxSource.update_time, 30),
+      history: normalizeMarketRows(ndxSource.history),
+    },
+    shanghai: shSource ? {
+      price: finiteNumber(shSource.price),
+      change_percent: finiteNumber(shSource.change_percent),
+      quote_date: text(shSource.quote_date, 10),
+      update_time: text(shSource.update_time, 30),
+      history: normalizeMarketRows(shSource.history),
+    } : null,
+    pe: {
+      value: finiteNumber(pe.value) > 0 ? finiteNumber(pe.value) : null,
+      kind: ["real", "manual", "estimated"].includes(pe.kind) ? pe.kind : null,
+      label: text(pe.label, 120),
+    },
+    earnings_anchor: anchor && finiteNumber(anchor.pe) > 0 && finiteNumber(anchor.price) > 0
+      ? { price: finiteNumber(anchor.price), pe: finiteNumber(anchor.pe), time: text(anchor.time, 30), source: text(anchor.source, 20) }
+      : null,
+    pe_samples: normalizePeSamples(source.pe_samples),
+    last_error: text(source.last_error, 240),
+  };
+}
+
+async function readMarket() {
+  let stored = await store.get(MARKET_KEY, { type: "json", consistency: "strong" });
+  if (!stored) {
+    // 首次升级：从旧版纳斯达克100缓存迁移已有历史数据
+    const legacy = await store.get(NASDAQ100_KEY, { type: "json", consistency: "strong" });
+    if (legacy && Array.isArray(legacy.history) && legacy.history.length) {
+      const peSamples = legacy.history.filter((item) => finiteNumber(item.pe_ratio) > 0).map((item) => [item.date, item.pe_ratio]);
+      stored = {
+        ndx: {
+          price: finiteNumber(legacy.price),
+          change_percent: finiteNumber(legacy.change_percent),
+          quote_date: legacy.history.at(-1)?.date || "",
+          source: text(legacy.source, 80),
+          update_time: text(legacy.update_time, 30),
+          history: legacy.history.map((item) => [item.date, item.price, item.price, item.price, item.price]),
+        },
+        pe_samples: peSamples,
+      };
+    }
+  }
+  return normalizeMarket(stored);
+}
+
+async function writeMarket(data) {
+  await store.setJSON(MARKET_KEY, normalizeMarket(data), { cacheControl: "no-store" });
 }
 
 function newYorkMarketOpen(now = new Date()) {
@@ -477,11 +613,11 @@ function newYorkMarketOpen(now = new Date()) {
   return minute >= 570 && minute <= 960;
 }
 
-async function fetchJson(url, timeoutMs = 12000) {
+async function fetchJson(url, timeoutMs = 15000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json", "User-Agent": "xnaitax-finance/1.0" } });
+    const response = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json", "User-Agent": "xnaitax-finance/2.0" } });
     const data = await response.json().catch(() => null);
     if (!response.ok || !data) throw new Error(`行情源返回 HTTP ${response.status}`);
     return data;
@@ -510,134 +646,227 @@ function findTrailingPe(data) {
   return candidates.map(finiteNumber).find((value) => value !== null) ?? null;
 }
 
-async function fetchTwelveNasdaq100() {
+async function fetchTwelveNdxOhlc() {
   const [quote, series, statistics] = await Promise.all([
     twelveData("quote", { symbol: "NDX" }),
-    twelveData("time_series", { symbol: "NDX", interval: "1day", outputsize: "400", order: "ASC" }),
+    twelveData("time_series", { symbol: "NDX", interval: "1day", outputsize: "2500", order: "ASC" }),
     twelveData("statistics", { symbol: "QQQ" }).catch(() => null),
   ]);
   const values = Array.isArray(series.values) ? series.values : [];
   if (!values.length) throw new Error("Twelve Data 未返回纳斯达克100历史行情");
-  const history = values.map((item) => ({ date: text(item.datetime, 10), price: finiteNumber(item.close) })).filter((item) => item.price !== null);
-  const price = finiteNumber(quote.close) ?? history.at(-1)?.price ?? null;
-  const change = finiteNumber(quote.percent_change) ?? (history.length > 1 ? (history.at(-1).price / history.at(-2).price - 1) * 100 : null);
+  const rows = values.map((item) => [
+    text(item.datetime, 10),
+    finiteNumber(item.open),
+    finiteNumber(item.high),
+    finiteNumber(item.low),
+    finiteNumber(item.close),
+  ]).filter((row) => row[4] !== null);
+  const price = finiteNumber(quote.close) ?? rows.at(-1)?.[4] ?? null;
+  const change = finiteNumber(quote.percent_change) ?? (rows.length > 1 ? (rows.at(-1)[4] / rows.at(-2)[4] - 1) * 100 : null);
   if (price === null) throw new Error("Twelve Data 未返回有效点位");
-  return { price, change, history, quote_date: text(quote.datetime, 10) || history.at(-1)?.date, pe: findTrailingPe(statistics), source: "Twelve Data", pe_source: statistics ? "Invesco QQQ 跟踪基金 trailing PE（Twelve Data）" : "" };
+  const pe = findTrailingPe(statistics);
+  return {
+    price, change, rows,
+    quote_date: text(quote.datetime, 10) || rows.at(-1)?.[0],
+    source: "Twelve Data",
+    pe: pe !== null && pe > 0 ? { value: pe, label: "Invesco QQQ 跟踪基金 trailing PE（Twelve Data 实时数据）" } : null,
+  };
 }
 
-async function fetchYahooNasdaq100() {
-  const data = await fetchJson("https://query1.finance.yahoo.com/v8/finance/chart/%5ENDX?range=1y&interval=1d&events=history");
-  const result = data?.chart?.result?.[0];
-  const timestamps = result?.timestamp || [], closes = result?.indicators?.quote?.[0]?.close || [];
-  const history = timestamps.map((timestamp, index) => ({
-    date: new Date(timestamp * 1000).toISOString().slice(0, 10),
-    price: finiteNumber(closes[index]),
-  })).filter((item) => item.price !== null);
-  const price = finiteNumber(result?.meta?.regularMarketPrice) ?? history.at(-1)?.price ?? null;
-  const quoteDate = result?.meta?.regularMarketTime ? new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(result.meta.regularMarketTime * 1000)) : history.at(-1)?.date;
-  const lastIndex = history.at(-1)?.date === quoteDate ? history.length - 2 : history.length - 1;
-  const previous = history[lastIndex]?.price ?? null;
-  if (price === null) throw new Error("备用行情源未返回有效点位");
-  return { price, change: previous ? (price / previous - 1) * 100 : null, history, quote_date: quoteDate, pe: null, source: "Yahoo Finance chart fallback", pe_source: "" };
-}
-
-function mergeNasdaqHistory(existing, fetched, snapshot) {
-  const byDate = new Map(existing.map((item) => [item.date, item]));
-  const now = new Date().toISOString();
-  for (const item of fetched) {
-    const old = byDate.get(item.date);
-    byDate.set(item.date, {
-      id: old?.id || `ndx-${item.date}`,
-      date: item.date,
-      price: item.price,
-      change_percent: old?.change_percent ?? null,
-      pe_ratio: old?.pe_ratio ?? null,
-      created_time: old?.created_time || now,
-      update_time: now,
-    });
+async function fetchYahooOhlc(symbol, range = "10y") {
+  const encoded = encodeURIComponent(symbol);
+  let lastError = null;
+  for (const host of ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]) {
+    try {
+      const data = await fetchJson(`https://${host}/v8/finance/chart/${encoded}?range=${range}&interval=1d&events=history`);
+      const result = data?.chart?.result?.[0];
+      const timestamps = result?.timestamp || [];
+      const quote = result?.indicators?.quote?.[0] || {};
+      const rows = timestamps.map((timestamp, index) => [
+        new Date(timestamp * 1000).toISOString().slice(0, 10),
+        finiteNumber(quote.open?.[index]),
+        finiteNumber(quote.high?.[index]),
+        finiteNumber(quote.low?.[index]),
+        finiteNumber(quote.close?.[index]),
+      ]).filter((row) => row[4] !== null);
+      if (!rows.length) throw new Error("行情源未返回历史数据");
+      const price = finiteNumber(result?.meta?.regularMarketPrice) ?? rows.at(-1)[4];
+      const quoteDate = result?.meta?.regularMarketTime ? new Date(result.meta.regularMarketTime * 1000).toISOString().slice(0, 10) : rows.at(-1)[0];
+      const lastIndex = rows.at(-1)[0] === quoteDate ? rows.length - 2 : rows.length - 1;
+      const previous = rows[lastIndex]?.[4] ?? null;
+      return { price, change: previous ? (price / previous - 1) * 100 : null, rows, quote_date: quoteDate, source: "Yahoo Finance", pe: null };
+    } catch (error) {
+      lastError = error;
+    }
   }
-  const marketDate = snapshot.quote_date || snapshot.history.at(-1)?.date || new Date().toISOString().slice(0, 10);
-  const old = byDate.get(marketDate);
-  byDate.set(marketDate, {
-    id: old?.id || `ndx-${marketDate}`,
-    date: marketDate,
-    price: snapshot.price,
-    change_percent: snapshot.change,
-    pe_ratio: snapshot.pe ?? old?.pe_ratio ?? null,
-    created_time: old?.created_time || now,
-    update_time: now,
-  });
-  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date)).slice(-500);
+  throw lastError || new Error("行情源请求失败");
 }
 
-async function refreshNasdaq100(cached) {
-  let snapshot;
-  let primaryError = "";
+function mergeMarketRows(existing, fetched, snapshot) {
+  const byDate = new Map((Array.isArray(existing) ? existing : []).map((row) => [row[0], row]));
+  for (const row of Array.isArray(fetched) ? fetched : []) {
+    if (Array.isArray(row) && row[4] !== null) byDate.set(row[0], row);
+  }
+  if (snapshot?.quote_date && finiteNumber(snapshot.price) !== null) {
+    const close = finiteNumber(snapshot.price);
+    const old = byDate.get(snapshot.quote_date);
+    byDate.set(snapshot.quote_date, [
+      snapshot.quote_date,
+      old ? old[1] : close,
+      old ? Math.max(old[2], close) : close,
+      old ? Math.min(old[3], close) : close,
+      close,
+    ]);
+  }
+  return normalizeMarketRows([...byDate.values()]);
+}
+
+function pushPeSample(market, pe) {
+  const date = (market.ndx.quote_date || new Date().toISOString()).slice(0, 10);
+  market.pe_samples = normalizePeSamples([...(market.pe_samples || []), [date, pe]]);
+}
+
+function resolveMarketPe(market, settings, realPe) {
+  const now = new Date().toISOString();
+  const price = market.ndx.price;
+  if (realPe?.value > 0) {
+    market.earnings_anchor = { price, pe: realPe.value, time: now, source: "real" };
+    pushPeSample(market, realPe.value);
+    return { value: realPe.value, kind: "real", label: realPe.label || "实时估值数据" };
+  }
+  const manual = settings.manual_pe;
+  if (manual?.value > 0) {
+    market.earnings_anchor = { price, pe: manual.value, time: now, source: "manual" };
+    pushPeSample(market, manual.value);
+    return { value: manual.value, kind: "manual", label: `管理员手动录入${manual.note ? `（${manual.note}）` : ""}` };
+  }
+  const anchor = market.earnings_anchor;
+  if (anchor?.pe > 0 && anchor.price > 0 && price > 0) {
+    const earnings = anchor.price / anchor.pe;
+    return { value: price / earnings, kind: "estimated", label: "模型估算（基于最近一次实测估值锚定）" };
+  }
+  const rows = (market.ndx.history || []).slice(-250);
+  if (rows.length > 20 && price > 0) {
+    const avgPrice = rows.reduce((sum, row) => sum + row[4], 0) / rows.length;
+    const earnings = avgPrice / LONG_RUN_PE;
+    return { value: price / earnings, kind: "estimated", label: "模型估算（历史均值锚定，非实时数据）" };
+  }
+  return { value: null, kind: null, label: "估值数据待更新" };
+}
+
+async function refreshMarket(cached, settings) {
+  const errors = [];
+  let ndxSnapshot = null;
+  let realPe = null;
+  if (text(process.env.TWELVE_DATA_API_KEY, 200)) {
+    try {
+      ndxSnapshot = await fetchTwelveNdxOhlc();
+      realPe = ndxSnapshot.pe;
+    } catch (error) {
+      errors.push(text(error?.message, 160));
+    }
+  }
+  if (!ndxSnapshot) ndxSnapshot = await fetchYahooOhlc("^NDX");
+  let shSnapshot = null;
   try {
-    snapshot = await fetchTwelveNasdaq100();
+    shSnapshot = await fetchYahooOhlc("000001.SS");
   } catch (error) {
-    primaryError = text(error?.message, 180);
-    snapshot = await fetchYahooNasdaq100();
+    errors.push(`上证指数：${text(error?.message, 140)}`);
   }
   const now = new Date().toISOString();
   const next = {
-    price: snapshot.price,
-    change_percent: snapshot.change,
-    pe_ratio: snapshot.pe ?? cached.pe_ratio,
-    pe_source: snapshot.pe_source || cached.pe_source,
-    source: snapshot.source,
-    update_time: now,
-    history: mergeNasdaqHistory(cached.history, snapshot.history, snapshot),
-    last_error: primaryError,
+    ...cached,
+    ndx: {
+      price: ndxSnapshot.price,
+      change_percent: ndxSnapshot.change,
+      quote_date: ndxSnapshot.quote_date,
+      source: ndxSnapshot.source,
+      update_time: now,
+      history: mergeMarketRows(cached.ndx?.history, ndxSnapshot.rows, ndxSnapshot),
+    },
+    shanghai: shSnapshot ? {
+      price: shSnapshot.price,
+      change_percent: shSnapshot.change,
+      quote_date: shSnapshot.quote_date,
+      update_time: now,
+      history: mergeMarketRows(cached.shanghai?.history, shSnapshot.rows, shSnapshot),
+    } : cached.shanghai || null,
+    pe_samples: cached.pe_samples || [],
+    earnings_anchor: cached.earnings_anchor || null,
   };
-  await writeNasdaq100(next);
-  return normalizeNasdaq100(next);
+  next.pe = resolveMarketPe(next, settings, realPe);
+  next.last_error = errors.filter(Boolean).join("；");
+  await writeMarket(next);
+  return normalizeMarket(next);
 }
 
-const changeFromHistory = (history, days) => {
-  const end = history.at(-1);
+const changeFromRows = (rows, days) => {
+  const end = rows.at(-1);
   if (!end) return null;
-  const cutoff = new Date(`${end.date}T12:00:00Z`).getTime() - days * 86400000;
-  const start = history.find((item) => new Date(`${item.date}T12:00:00Z`).getTime() >= cutoff) || history[0];
-  return start?.price ? (end.price / start.price - 1) * 100 : null;
+  const cutoff = new Date(`${end[0]}T12:00:00Z`).getTime() - days * 86400000;
+  const start = rows.find((row) => new Date(`${row[0]}T12:00:00Z`).getTime() >= cutoff) || rows[0];
+  return start?.[4] ? (end[4] / start[4] - 1) * 100 : null;
 };
 
-function publicNasdaq100(data, stale = false) {
-  const peSamples = data.history.map((item) => item.pe_ratio).filter((value) => value !== null);
-  const peAverage = peSamples.length >= 5 ? peSamples.reduce((sum, value) => sum + value, 0) / peSamples.length : 24.25;
-  const pePercentile = peSamples.length >= 20 && data.pe_ratio !== null ? peSamples.filter((value) => value <= data.pe_ratio).length / peSamples.length * 100 : null;
+const expandMarketRows = (rows) => (Array.isArray(rows) ? rows : []).map(([date, open, high, low, close]) => ({ date, open, high, low, close, price: close }));
+
+function publicMarket(market, settings, stale = false) {
+  const rows = market.ndx.history || [];
+  const samples = (market.pe_samples || []).map(([, pe]) => pe).filter((value) => value > 0);
+  const peAverage = samples.length >= 5 ? samples.reduce((sum, value) => sum + value, 0) / samples.length : LONG_RUN_PE;
+  const pe = market.pe?.value ?? null;
+  const pePercentile = samples.length >= 20 && pe !== null ? samples.filter((value) => value <= pe).length / samples.length * 100 : null;
   return {
-    price: data.price,
-    change: data.change_percent,
-    history: data.history.map((item) => ({ date: item.date, price: item.price, change_percent: item.change_percent, pe_ratio: item.pe_ratio })),
-    performance: { month_1: changeFromHistory(data.history, 31), month_3: changeFromHistory(data.history, 93), half_year: changeFromHistory(data.history, 186), year_1: changeFromHistory(data.history, 370) },
-    pe: data.pe_ratio,
+    price: market.ndx.price,
+    change: market.ndx.change_percent,
+    history: expandMarketRows(rows),
+    performance: {
+      month_1: changeFromRows(rows, 31),
+      month_3: changeFromRows(rows, 93),
+      half_year: changeFromRows(rows, 186),
+      year_1: changeFromRows(rows, 370),
+    },
+    pe,
+    pe_kind: market.pe?.kind || null,
+    pe_source: market.pe?.label || "",
     pe_average: peAverage,
     pe_percentile: pePercentile,
-    pe_source: data.pe_source,
-    pe_average_source: peSamples.length >= 5 ? "本站已保存样本" : "Nasdaq 2006–2021 历史研究均值",
-    update_time: data.update_time,
-    source: data.source,
+    pe_average_source: samples.length >= 5 ? "本站已保存样本" : "Nasdaq 2006–2021 历史研究均值",
+    update_time: market.ndx.update_time,
+    source: market.ndx.source,
     stale,
+    shanghai: market.shanghai ? {
+      price: market.shanghai.price,
+      change: market.shanghai.change_percent,
+      update_time: market.shanghai.update_time,
+      history: expandMarketRows(market.shanghai.history),
+    } : null,
+    settings: {
+      valuation_bands: settings.valuation_bands,
+      strategy_zones: settings.strategy_zones,
+    },
   };
 }
 
-async function nasdaq100Response(url) {
-  let cached = await readNasdaq100();
-  const age = cached.update_time ? Date.now() - new Date(cached.update_time).getTime() : Infinity;
-  const due = age > (newYorkMarketOpen() ? 45 * 60000 : 6 * 3600000);
-  if (due || !cached.price) {
+async function nasdaq100Response() {
+  const settings = await readFinanceSettings();
+  let cached = await readMarket();
+  const age = cached.ndx?.update_time ? Date.now() - new Date(cached.ndx.update_time).getTime() : Infinity;
+  const needUpgrade = (cached.ndx?.history?.length || 0) < 1500 || !cached.shanghai;
+  let due = age > (newYorkMarketOpen() ? 45 * 60000 : 6 * 3600000);
+  if (needUpgrade && age > 15 * 60000) due = true;
+  if (due || !cached.ndx?.price) {
     try {
-      cached = await refreshNasdaq100(cached);
+      cached = await refreshMarket(cached, settings);
     } catch (error) {
-      console.error("nasdaq100-refresh", error);
-      if (!cached.price) return json({ detail: "纳斯达克100行情暂时不可用，请稍后重试", update_time: cached.update_time || null }, 503);
-      cached.last_error = text(error?.message, 180);
-      return json(publicNasdaq100(cached, true), 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
+      console.error("market-refresh", error);
+      if (!cached.ndx?.price) return json({ detail: "行情暂时不可用，请稍后重试", update_time: cached.ndx?.update_time || null }, 503);
+      return json(publicMarket(cached, settings, true), 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
     }
   }
-  return json(publicNasdaq100(cached, false), 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
+  return json(publicMarket(cached, settings, false), 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
 }
+// ==================== 市场数据系统结束 ====================
 
 function sanitizeCourse(input, fallbackId = null) {
   return {
@@ -1160,6 +1389,17 @@ async function adminRoutes(request, url, path) {
     await writeState(state);
     return json({ ok: true, major, version: majorData.version, course_count: courses.length });
   }
+  if (path === "/api/admin/finance-settings" && request.method === "GET") {
+    return json(await readFinanceSettings());
+  }
+
+  if (path === "/api/admin/finance-settings" && request.method === "PUT") {
+    const body = await bodyJson(request);
+    const settings = sanitizeFinanceSettings(body);
+    await writeFinanceSettings(settings);
+    return json(settings);
+  }
+
   return fail("管理员接口不存在", 404);
 }
 
@@ -1170,7 +1410,7 @@ export async function onRequest({ request }) {
     if (path === "/api/analytics/visit" && request.method === "POST") return await recordAnonymousVisit(request);
     if (path === "/api/analytics/action" && request.method === "POST") return await recordUserAction(request);
     if (path === "/api/menu-vote" && request.method === "POST") return await voteMenuDish(request);
-    if (path === "/api/nasdaq100" && request.method === "GET") return await nasdaq100Response(url);
+    if (path === "/api/nasdaq100" && request.method === "GET") return await nasdaq100Response();
     if ((path === "/api/live-courses" || path.startsWith("/api/live-courses/") || path === "/api/courses") && request.method === "GET") {
       const state = await readState();
       const pathMajor = path.startsWith("/api/live-courses/") ? decodeURIComponent(path.slice("/api/live-courses/".length)) : null;

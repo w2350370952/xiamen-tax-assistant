@@ -2641,3 +2641,248 @@ header p {
     grid-template-columns: 1fr;
   }
 }
+
+/* ================= 财经模块 2.0：投资分析助手 ================= */
+.finance-dashboard {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.finance-dashboard > article,
+.finance-dashboard .dash-perf {
+  background: #fff;
+  border: 1px solid #e3e9f2;
+  border-radius: 18px;
+  padding: 20px;
+  box-shadow: 0 10px 30px rgba(23, 51, 95, .06);
+}
+.dash-primary small,
+.dash-advice-row small,
+.dash-advice-tip small {
+  display: block;
+  color: #8490a1;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  margin-bottom: 6px;
+}
+.dash-price { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.dash-price strong { font-size: 34px; font-weight: 800; color: #152744; letter-spacing: -.01em; }
+.dash-price span { display: inline-flex; align-items: center; gap: 4px; font-size: 15px; font-weight: 700; }
+.dash-price span svg { width: 17px; }
+.dash-primary p { margin: 8px 0 0; color: #8490a1; font-size: 12px; }
+.dash-perf { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.dash-perf article { display: flex; flex-direction: column; justify-content: center; gap: 6px; }
+.dash-perf small { color: #8490a1; font-size: 12px; }
+.dash-perf strong { font-size: 20px; font-weight: 800; }
+.dash-advice { display: flex; flex-direction: column; gap: 12px; }
+.dash-advice-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.dash-advice-row small, .dash-advice-tip small { margin-bottom: 0; }
+.dash-stars { display: inline-flex; gap: 2px; }
+.dash-stars svg { width: 15px; color: #d7dee8; fill: #d7dee8; }
+.dash-stars svg.filled { color: #f0a32b; fill: #f0a32b; }
+.dash-advice-tip p { margin: 4px 0 0; font-size: 13px; line-height: 1.6; color: #3c4c63; font-weight: 600; }
+
+.chart-head { flex-wrap: wrap; gap: 12px; }
+.chart-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chart-controls .finance-range { display: inline-flex; }
+.type-tabs button { display: inline-flex; align-items: center; gap: 4px; }
+.type-tabs button svg { width: 14px; }
+
+.market-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin: 14px 0 6px;
+}
+.market-stats article {
+  background: #f7f9fc;
+  border: 1px solid #e8edf4;
+  border-radius: 13px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.market-stats small { color: #8490a1; font-size: 11px; }
+.market-stats strong { font-size: 16px; font-weight: 800; color: #152744; }
+.market-stats em { font-style: normal; font-size: 12px; font-weight: 700; }
+.compare-stats { grid-template-columns: repeat(2, 1fr); }
+
+.valuation-head-tags { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pe-kind-tag {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+.pe-kind-tag.low { color: #147657; background: #e2f5ec; }
+.pe-kind-tag.fair { color: #8c6c08; background: #fff5cd; }
+.pe-kind-tag.elevated { color: #9b5d13; background: #fff0d9; }
+
+.valuation-chip.neutral { color: #5b6b82; background: #eef1f6; }
+.valuation-chip.deep { color: #6b4dbb; background: #efe9fb; }
+
+.valuation-scale.dynamic { margin-top: 16px; }
+.valuation-scale-track.segmented {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  overflow: visible;
+  background: #eef1f6;
+  display: flex;
+}
+.valuation-scale-track.segmented .segment {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  opacity: .85;
+}
+.valuation-scale-track.segmented .segment:first-child { border-radius: 999px 0 0 999px; }
+.valuation-scale-track.segmented .segment:last-of-type { border-radius: 0 999px 999px 0; }
+.segment.tone-low { background: #8fd8bd; }
+.segment.tone-fair { background: #f3dd85; }
+.segment.tone-elevated { background: #f3c08a; }
+.segment.tone-high { background: #f0a9ae; }
+.segment.tone-deep { background: #c3b0ea; }
+.scale-marker {
+  position: absolute;
+  top: -7px;
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 10px solid #17335f;
+  transform: translateX(-7px);
+}
+.scale-marker em {
+  position: absolute;
+  top: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 800;
+  color: #17335f;
+  white-space: nowrap;
+}
+
+.zone-list { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+.zone-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr) minmax(0, 1.4fr);
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #e8edf4;
+  border-left-width: 5px;
+  border-radius: 13px;
+  padding: 13px 16px;
+  background: #fbfcfe;
+}
+.zone-row.tone-low { border-left-color: #38b489; }
+.zone-row.tone-fair { border-left-color: #e6c53f; }
+.zone-row.tone-elevated { border-left-color: #e59a4b; }
+.zone-row.tone-high { border-left-color: #d9545c; }
+.zone-row.tone-deep { border-left-color: #8a6fd8; }
+.zone-row.current { background: #f2f7ff; border-color: #b9cff5; border-left-width: 5px; box-shadow: 0 6px 18px rgba(47, 111, 237, .10); }
+.zone-range strong { font-size: 15px; color: #152744; display: block; }
+.zone-range em {
+  display: inline-block;
+  margin-top: 4px;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 800;
+  color: #245da8;
+  background: #dbe8ff;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.zone-state small, .zone-advice small { display: block; color: #8490a1; font-size: 11px; margin-bottom: 3px; }
+.zone-state strong { font-size: 14px; color: #152744; }
+.zone-advice p { margin: 0; font-size: 13px; color: #3c4c63; font-weight: 600; line-height: 1.5; }
+
+.drawdown-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+.drawdown-grid article {
+  border: 1px solid #e8edf4;
+  border-radius: 13px;
+  padding: 14px 16px;
+  background: #fbfcfe;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.drawdown-grid article > strong { font-size: 14px; color: #152744; }
+.drawdown-grid article > small { color: #8490a1; font-size: 11px; }
+.drawdown-grid article div { display: flex; gap: 18px; flex-wrap: wrap; }
+.drawdown-grid article div span { display: flex; flex-direction: column; gap: 2px; }
+.drawdown-grid article div small { color: #8490a1; font-size: 11px; }
+.drawdown-grid article div b { font-size: 14px; color: #152744; }
+
+.intro-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.intro-grid article {
+  border: 1px solid #e8edf4;
+  border-radius: 13px;
+  padding: 14px 16px;
+  background: #fbfcfe;
+}
+.intro-grid small { display: block; color: #8490a1; font-size: 11px; margin-bottom: 4px; }
+.intro-grid strong { font-size: 14px; color: #152744; }
+
+.collapsible { margin-bottom: 20px; }
+.collapsible-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 4px 2px 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.collapsible-head > span {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: #eaf1ff;
+  color: #2f6fed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 38px;
+}
+.collapsible-head > span svg { width: 19px; }
+.collapsible-head > div { flex: 1; }
+.collapsible-head small { display: block; color: #8490a1; font-size: 10px; font-weight: 800; letter-spacing: .1em; }
+.collapsible-head h2 { margin: 2px 0 0; font-size: 17px; color: #152744; }
+.collapsible-head > svg { width: 18px; color: #8490a1; transition: transform .2s; }
+.collapsible:not(.open) .collapsible-head > svg { transform: rotate(-90deg); }
+.collapsible:not(.open) .collapsible-body { display: none; }
+.finance-card.flat { margin-bottom: 0; }
+
+@media (max-width: 1100px) {
+  .finance-dashboard { grid-template-columns: 1fr 1fr; }
+  .dash-advice { grid-column: 1 / -1; }
+}
+
+@media (max-width: 720px) {
+  .finance-dashboard { grid-template-columns: 1fr; }
+  .dash-price strong { font-size: 28px; }
+  .market-stats { grid-template-columns: repeat(2, 1fr); }
+  .compare-stats { grid-template-columns: 1fr; }
+  .zone-row { grid-template-columns: 1fr; gap: 8px; }
+  .drawdown-grid, .intro-grid { grid-template-columns: 1fr; }
+  .chart-controls { width: 100%; }
+  .chart-controls .finance-range { flex-wrap: wrap; }
+}
+/* ================= 财经模块 2.0 结束 ================= */
