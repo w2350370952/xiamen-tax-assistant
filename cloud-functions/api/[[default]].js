@@ -446,9 +446,9 @@ const FINANCE_TONES = ["low", "fair", "elevated", "high", "deep"];
 
 const DEFAULT_FINANCE_SETTINGS = {
   valuation_bands: [
-    { max: 25, label: "低估", icon: "🟢", tone: "low", advice: "估值处于低位，保持定投的同时可关注分批布局机会。" },
-    { max: 35, label: "合理", icon: "🟡", tone: "fair", advice: "估值处于合理区间，保持正常定投节奏。" },
-    { max: 45, label: "偏高估", icon: "🟠", tone: "elevated", advice: "保持正常定投，不建议一次性大额买入。" },
+    { max: 20, label: "低估", icon: "🟢", tone: "low", advice: "估值处于低位，保持定投的同时可关注分批布局机会。" },
+    { max: 30, label: "合理", icon: "🟡", tone: "fair", advice: "估值处于合理区间，保持正常定投节奏。" },
+    { max: 40, label: "偏高估", icon: "🟠", tone: "elevated", advice: "估值偏高，保持正常定投，不建议一次性大额买入。" },
     { max: null, label: "高估", icon: "🔴", tone: "high", advice: "估值处于高位，建议控制投入节奏，保留现金应对波动。" },
   ],
   strategy_zones: [
@@ -533,7 +533,8 @@ function normalizePeSamples(raw) {
   for (const item of Array.isArray(raw) ? raw : []) {
     const date = text(Array.isArray(item) ? item[0] : item?.date, 10);
     const pe = finiteNumber(Array.isArray(item) ? item[1] : item?.pe);
-    if (/^20\d{2}-\d{2}-\d{2}$/.test(date) && pe !== null && pe > 0 && pe < 500) byDate.set(date, pe);
+    const kind = ["real", "manual", "estimated"].includes(Array.isArray(item) ? item[2] : item?.kind) ? (Array.isArray(item) ? item[2] : item.kind) : "estimated";
+    if (/^20\d{2}-\d{2}-\d{2}$/.test(date) && pe !== null && pe > 0 && pe < 500) byDate.set(date, [pe, kind]);
   }
   return [...byDate.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-400);
 }
@@ -675,7 +676,7 @@ async function fetchTwelveNdxOhlc() {
     price, change, rows,
     quote_date: text(quote.datetime, 10) || rows.at(-1)?.[0],
     source: "Twelve Data",
-    pe: pe !== null && pe > 0 ? { value: pe, label: "Invesco QQQ 跟踪基金 trailing PE（Twelve Data 实时数据）" } : null,
+    pe: pe !== null && pe > 0 ? { value: pe, label: "Invesco QQQ 跟踪基金 Trailing PE（Twelve Data 实时数据）" } : null,
   };
 }
 
@@ -753,9 +754,9 @@ function mergeMarketRows(existing, fetched, snapshot) {
   return normalizeMarketRows([...byDate.values()]);
 }
 
-function pushPeSample(market, pe) {
+function pushPeSample(market, pe, kind = "estimated") {
   const date = (market.ndx.quote_date || new Date().toISOString()).slice(0, 10);
-  market.pe_samples = normalizePeSamples([...(market.pe_samples || []), [date, pe]]);
+  market.pe_samples = normalizePeSamples([...(market.pe_samples || []), [date, pe, kind]]);
 }
 
 function resolveMarketPe(market, settings, realPe) {
@@ -763,25 +764,29 @@ function resolveMarketPe(market, settings, realPe) {
   const price = market.ndx.price;
   if (realPe?.value > 0) {
     market.earnings_anchor = { price, pe: realPe.value, time: now, source: "real" };
-    pushPeSample(market, realPe.value);
-    return { value: realPe.value, kind: "real", label: realPe.label || "实时估值数据" };
+    pushPeSample(market, realPe.value, "real");
+    return { value: realPe.value, kind: "real", label: realPe.label || "实时 Trailing PE" };
   }
   const manual = settings.manual_pe;
   if (manual?.value > 0) {
     market.earnings_anchor = { price, pe: manual.value, time: now, source: "manual" };
-    pushPeSample(market, manual.value);
+    pushPeSample(market, manual.value, "manual");
     return { value: manual.value, kind: "manual", label: `管理员手动录入${manual.note ? `（${manual.note}）` : ""}` };
   }
   const anchor = market.earnings_anchor;
   if (anchor?.pe > 0 && anchor.price > 0 && price > 0) {
     const earnings = anchor.price / anchor.pe;
-    return { value: price / earnings, kind: "estimated", label: "模型估算（基于最近一次实测估值锚定）" };
+    const value = price / earnings;
+    pushPeSample(market, value, "estimated");
+    return { value, kind: "estimated", label: "模型估算 Trailing PE（基于最近一次实测估值锚定）" };
   }
   const rows = (market.ndx.history || []).slice(-250);
   if (rows.length > 20 && price > 0) {
     const avgPrice = rows.reduce((sum, row) => sum + row[4], 0) / rows.length;
     const earnings = avgPrice / LONG_RUN_PE;
-    return { value: price / earnings, kind: "estimated", label: "模型估算（历史均值锚定，非实时数据）" };
+    const value = price / earnings;
+    pushPeSample(market, value, "estimated");
+    return { value, kind: "estimated", label: "模型估算 Trailing PE（历史均值锚定，非实时数据）" };
   }
   return { value: null, kind: null, label: "估值数据待更新" };
 }
@@ -918,10 +923,12 @@ function publicMarket(market, settings, stale = false, lite = false) {
   const trim = (index) => index ? { ...index, history: lite ? (index.history || []).slice(-400) : index.history } : null;
   const shIndex = trim(market.shanghai);
   const csiIndex = trim(market.csi300);
-  const samples = (market.pe_samples || []).map(([, pe]) => pe).filter((value) => value > 0);
-  const peAverage = samples.length >= 5 ? samples.reduce((sum, value) => sum + value, 0) / samples.length : LONG_RUN_PE;
+  const sampleItems = Array.isArray(market.pe_samples) ? market.pe_samples : [];
+  const samples = sampleItems.map((item) => (Array.isArray(item) ? item[1] : item?.pe)).filter((value) => value > 0);
+  const realCount = sampleItems.filter((item) => (Array.isArray(item) ? item[2] : item?.kind) === "real").length;
+  const peAverage = samples.length >= 5 ? Math.round((samples.reduce((sum, value) => sum + value, 0) / samples.length) * 10) / 10 : null;
   const pe = market.pe?.value ?? null;
-  const pePercentile = samples.length >= 20 && pe !== null ? samples.filter((value) => value <= pe).length / samples.length * 100 : null;
+  const pePercentile = samples.length >= 20 && pe !== null ? Math.round(samples.filter((value) => value <= pe).length / samples.length * 1000) / 10 : null;
   return {
     index_name: "NASDAQ-100 Index",
     symbol: "NDX",
@@ -939,7 +946,7 @@ function publicMarket(market, settings, stale = false, lite = false) {
     pe_source: market.pe?.label || "",
     pe_average: peAverage,
     pe_percentile: pePercentile,
-    pe_average_source: samples.length >= 5 ? "本站已保存样本" : "Nasdaq 2006–2021 历史研究均值",
+    pe_average_source: samples.length >= 5 ? `基于本站已积累的 ${samples.length} 天每日估值样本动态计算${realCount >= 30 ? "（以实测为主）" : "（含模型估算样本）"}` : "样本积累中，满5天后自动生成",
     update_time: market.ndx.update_time,
     source: market.ndx.source,
     stale,
@@ -968,7 +975,7 @@ function publicMarket(market, settings, stale = false, lite = false) {
   };
 }
 
-async function nasdaq100Response(url) {
+async function nasdaq100Response(url, waitUntil) {
   const settings = await readFinanceSettings();
   let cached = await readMarket();
   const force = Boolean(url?.searchParams?.get("refresh"));
@@ -976,6 +983,11 @@ async function nasdaq100Response(url) {
   const needUpgrade = (cached.ndx?.history?.length || 0) < 1500 || !cached.shanghai || !cached.csi300;
   let due = age > (newYorkMarketOpen() ? 60000 : 30 * 60000);
   if (needUpgrade && age > 15 * 60000) due = true;
+  // 有缓存且非手动强制：立即返回缓存，后台异步刷新（页面秒开，数据自动追新）
+  if (due && cached.ndx?.price && !force && typeof waitUntil === "function") {
+    waitUntil(refreshMarket(cached, settings).catch((error) => console.error("market-refresh-bg", error)));
+    return json(publicMarket(cached, settings, false, url?.searchParams?.get("lite") === "1"), 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
+  }
   if (force || due || !cached.ndx?.price) {
     try {
       cached = await refreshMarket(cached, settings);
@@ -1513,14 +1525,16 @@ async function adminRoutes(request, url, path) {
   return fail("管理员接口不存在", 404);
 }
 
-export async function onRequest({ request }) {
+export async function onRequest(context) {
+  const { request } = context;
+  const waitUntilFn = typeof context?.waitUntil === "function" ? context.waitUntil.bind(context) : null;
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
   try {
     if (path === "/api/analytics/visit" && request.method === "POST") return await recordAnonymousVisit(request);
     if (path === "/api/analytics/action" && request.method === "POST") return await recordUserAction(request);
     if (path === "/api/menu-vote" && request.method === "POST") return await voteMenuDish(request);
-    if (path === "/api/nasdaq100" && request.method === "GET") return await nasdaq100Response(url);
+    if (path === "/api/nasdaq100" && request.method === "GET") return await nasdaq100Response(url, typeof waitUntilFn === "function" ? waitUntilFn : null);
     if ((path === "/api/live-courses" || path.startsWith("/api/live-courses/") || path === "/api/courses") && request.method === "GET") {
       const state = await readState();
       const pathMajor = path.startsWith("/api/live-courses/") ? decodeURIComponent(path.slice("/api/live-courses/".length)) : null;

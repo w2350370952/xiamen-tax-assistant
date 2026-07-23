@@ -15,9 +15,9 @@ const NasdaqChart = lazy(() => import("./NasdaqChart"));
 
 // 与后端 DEFAULT_FINANCE_SETTINGS 保持一致，仅在网络异常时兜底使用
 const fallbackBands = [
-  { max: 25, label: "低估", icon: "🟢", tone: "low", advice: "估值处于低位，保持定投的同时可关注分批布局机会。" },
-  { max: 35, label: "合理", icon: "🟡", tone: "fair", advice: "估值处于合理区间，保持正常定投节奏。" },
-  { max: 45, label: "偏高估", icon: "🟠", tone: "elevated", advice: "保持正常定投，不建议一次性大额买入。" },
+  { max: 20, label: "低估", icon: "🟢", tone: "low", advice: "估值处于低位，保持定投的同时可关注分批布局机会。" },
+  { max: 30, label: "合理", icon: "🟡", tone: "fair", advice: "估值处于合理区间，保持正常定投节奏。" },
+  { max: 40, label: "偏高估", icon: "🟠", tone: "elevated", advice: "估值偏高，保持正常定投，不建议一次性大额买入。" },
   { max: null, label: "高估", icon: "🔴", tone: "high", advice: "估值处于高位，建议控制投入节奏，保留现金应对波动。" },
 ];
 const fallbackZones = [
@@ -51,6 +51,19 @@ function bandOf(bands, pe) {
   const value = Number(pe);
   if (!Number.isFinite(value)) return null;
   return bands.find((band) => band.max === null || value <= band.max) || bands.at(-1) || null;
+}
+
+// 点位区间与 PE 估值的综合判断：指数下跌但 PE 仍高不按低估处理；双低则提高买入等级
+function combinedAdvice(band, zone) {
+  if (!band || !zone) return null;
+  const peHigh = band.tone === "elevated" || band.tone === "high";
+  const peLow = band.tone === "low";
+  const zoneLow = zone.tone === "low" || zone.tone === "deep";
+  if (peHigh && zoneLow) return { tone: "elevated", text: "指数回落但 PE 估值仍偏高：不按低估处理，维持正常定投，暂不加仓。" };
+  if (peHigh && !zoneLow) return { tone: "high", text: "点位与估值双高：控制投入节奏，保留现金应对波动。" };
+  if (peLow && zoneLow) return { tone: "deep", text: "点位与估值双低：历史级机会区域，可提高买入等级、分批加仓。" };
+  if (peLow) return { tone: "low", text: "PE 估值处于低位：可提高定投比例，分批布局。" };
+  return { tone: "fair", text: "估值合理：按点位区间策略执行，保持正常定投节奏。" };
 }
 
 function zoneOf(zones, price) {
@@ -210,8 +223,9 @@ export default function FinancePage({ data, loading, error, onReload }) {
           </div>
         </div>
         <div className="valuation-numbers">
-          <article><small>当前PE</small><strong>{typeof data?.pe === "number" ? <>{number(data.pe, 1)}<em>倍</em></> : "暂无数据"}</strong></article>
-          <article><small>历史平均PE</small><strong>{number(data?.pe_average, 1)}<em>倍</em></strong></article>
+          <article><small>当前PE（Trailing 滚动）</small><strong>{typeof data?.pe === "number" ? <>{number(data.pe, 1)}<em>倍</em></> : "暂无数据"}</strong></article>
+          <article><small>Forward PE（预测）</small><strong className="na">—</strong><em className="na-note">暂无可靠免费数据源，不展示以免误导</em></article>
+          <article><small>历史平均PE</small><strong>{typeof data?.pe_average === "number" ? <>{number(data.pe_average, 1)}<em>倍</em></> : "样本积累中"}</strong></article>
           <article><small>历史估值分位</small><strong>{typeof data?.pe_percentile === "number" ? `${number(data.pe_percentile, 0)}%` : "样本积累中"}</strong></article>
         </div>
         <ValuationScale pe={data?.pe} bands={bands}/>
@@ -222,6 +236,10 @@ export default function FinancePage({ data, loading, error, onReload }) {
     <Collapsible eyebrow="STRATEGY" title="纳斯达克100投资参考" icon={<Activity/>}>
       <section className="finance-card strategy-zones-card flat">
         <div className="finance-card-head"><div><small>STRATEGY ZONES</small><h2>按指数点位的投资参考</h2></div>{zone && <span className={`valuation-chip ${zone.tone}`}>当前 {number(data?.price, 0)} 点 · {zone.state}</span>}</div>
+        {combinedAdvice(band, zone) && <div className={`combined-advice tone-${combinedAdvice(band, zone).tone}`}>
+          <small>综合判断（点位 + PE估值）</small>
+          <p>{combinedAdvice(band, zone).text}</p>
+        </div>}
         <div className="zone-list">
           {zones.map((item, index) => {
             const current = zone === item;

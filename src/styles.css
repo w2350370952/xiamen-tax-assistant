@@ -2898,3 +2898,17 @@ header p {
 .why-disclaimer { margin-top: 16px; font-size: 11px; color: #8490a1; background: #f7f9fc; border-radius: 10px; padding: 10px 14px; line-height: 1.7; }
 @media (max-width: 1000px) { .why-grid { grid-template-columns: 1fr; } }
 /* ================= 定投逻辑模块结束 ================= */
+
+/* 估值模块补充 */
+.valuation-numbers { grid-template-columns: repeat(4, 1fr); }
+.valuation-numbers .na { color: #a9b4c2; }
+.na-note { display: block; font-style: normal; font-size: 10px; color: #a9b4c2; margin-top: 4px; line-height: 1.4; }
+.combined-advice { border-radius: 12px; padding: 12px 16px; margin: 4px 0 12px; border: 1px solid; }
+.combined-advice small { display: block; font-size: 10px; font-weight: 800; letter-spacing: .06em; margin-bottom: 4px; opacity: .8; }
+.combined-advice p { margin: 0; font-size: 13px; font-weight: 700; line-height: 1.6; }
+.combined-advice.tone-low { background: #e9f8f1; border-color: #b7e6d2; color: #12684c; }
+.combined-advice.tone-fair { background: #fdf6dd; border-color: #ecdc9a; color: #7a6207; }
+.combined-advice.tone-elevated { background: #fdf0de; border-color: #f0d3a8; color: #8a5312; }
+.combined-advice.tone-high { background: #fde9ea; border-color: #f2c3c7; color: #a43640; }
+.combined-advice.tone-deep { background: #f0ebfb; border-color: #d4c6f0; color: #5b3fb0; }
+@media (max-width: 720px) { .valuation-numbers { grid-template-columns: repeat(2, 1fr); } }
