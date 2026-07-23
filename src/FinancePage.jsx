@@ -204,6 +204,7 @@ export default function FinancePage({ data, loading, error, onReload }) {
         <article><small>上证区间高/低</small><strong>{shStats ? `${number(shStats.high)} / ${number(shStats.low)}` : "暂无数据"}</strong><em className={Number(shStats?.change) > 0 ? "up" : Number(shStats?.change) < 0 ? "down" : ""}>累计 {percent(shStats?.change)}</em></article>
       </div>}
 
+      {data?.lite && ["3y", "5y", "10y"].includes(range) && <p className="chart-note">完整十年历史正在后台加载，当前为近期数据…</p>}
       {chartMode === "compare" && <p className="chart-note">单轴对比：两指数共用同一真实点位坐标轴，可直观看出纳斯达克100与上证指数的量级差距。</p>}
       {chartMode === "compare" && !shHistory.length && <div className="finance-chart-empty"><BarChart3/><p>上证指数数据暂不可用，仅展示纳斯达克100走势。</p></div>}
       {ndxSlice.length > 1

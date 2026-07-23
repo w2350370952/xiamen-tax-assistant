@@ -999,6 +999,7 @@ async function nasdaq100Response(url, waitUntil, request) {
   const settings = await readFinanceSettings();
   let cached = await readMarket();
   const force = Boolean(url?.searchParams?.get("refresh"));
+  const lite = url?.searchParams?.get("full") !== "1";
   const age = cached.ndx?.update_time ? Date.now() - new Date(cached.ndx.update_time).getTime() : Infinity;
   const needUpgrade = (cached.ndx?.history?.length || 0) < 1500 || !cached.shanghai || !cached.csi300;
   let due = age > (newYorkMarketOpen() ? 60000 : 30 * 60000);
@@ -1008,7 +1009,7 @@ async function nasdaq100Response(url, waitUntil, request) {
     if (due && typeof waitUntil === "function") {
       waitUntil(refreshMarket(cached, settings).catch((error) => console.error("market-refresh-bg", error)));
     }
-    return marketJson(publicMarket(cached, settings, age > 2 * 3600000, url?.searchParams?.get("lite") === "1"), request);
+    return marketJson(publicMarket(cached, settings, age > 2 * 3600000, lite), request);
   }
   if (force || due || !cached.ndx?.price) {
     try {
@@ -1016,10 +1017,10 @@ async function nasdaq100Response(url, waitUntil, request) {
     } catch (error) {
       console.error("market-refresh", error);
       if (!cached.ndx?.price) return json({ detail: "行情暂时不可用，请稍后重试", update_time: cached.ndx?.update_time || null }, 503);
-      return marketJson(publicMarket(cached, settings, true, url?.searchParams?.get("lite") === "1"), request);
+      return marketJson(publicMarket(cached, settings, true, lite), request);
     }
   }
-  return marketJson(publicMarket(cached, settings, false, url?.searchParams?.get("lite") === "1"), request);
+  return marketJson(publicMarket(cached, settings, false, lite), request);
 }
 // ==================== 市场数据系统结束 ====================
 
