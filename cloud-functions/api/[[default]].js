@@ -5,6 +5,7 @@ const store = getStore("xiamen-tax-assistant");
 const STATE_KEY = "course-state.json";
 const ANALYTICS_KEY = "anonymous-analytics-v1.json";
 const MENU_RATINGS_KEY = "menu-ratings-v1.json";
+const DEVICE_BEHAVIOR_KEY = "device-behavior-v1.json";
 const COOKIE = "xnai_admin";
 const ADMIN_USER = "xnaitax2025";
 const ADMIN_PASSWORD_SHA256 = "3d4a6df67e692969e3092a220365c136d761097075b504bea76c0b2858a22bb5";
@@ -104,6 +105,12 @@ function analyticsDateOffset(date, offset) {
   return value.toISOString().slice(0, 10);
 }
 
+function beijingDateOf(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+}
+
 function devicePlatform(request) {
   const ua = request.headers.get("user-agent") || "";
   if (/HarmonyOS|HUAWEI.*Harmony/i.test(ua)) return "HarmonyOS";
@@ -115,10 +122,143 @@ function devicePlatform(request) {
   return "其他";
 }
 
+function browserName(request) {
+  const ua = request.headers.get("user-agent") || "";
+  if (/MicroMessenger/i.test(ua)) return "微信浏览器";
+  if (/Edg\//i.test(ua)) return "Edge";
+  if (/OPR\/|Opera/i.test(ua)) return "Opera";
+  if (/Firefox\//i.test(ua)) return "Firefox";
+  if (/CriOS\/|Chrome\//i.test(ua)) return "Chrome";
+  if (/Safari\//i.test(ua)) return "Safari";
+  return "其他";
+}
+
+function deviceIdentity(request) {
+  const ua = request.headers.get("user-agent") || "";
+  if (/iPad/i.test(ua) || (/Macintosh/i.test(ua) && /Mobile/i.test(ua))) return { device_name: "iPad", device_type: "平板" };
+  if (/iPhone/i.test(ua)) return { device_name: "iPhone", device_type: "手机" };
+  if (/Android/i.test(ua) && /Mobile/i.test(ua)) return { device_name: "Android 手机", device_type: "手机" };
+  if (/Android/i.test(ua)) return { device_name: "Android 平板", device_type: "平板" };
+  if (/Windows/i.test(ua)) return { device_name: "Windows 电脑", device_type: "电脑" };
+  if (/Macintosh|Mac OS X/i.test(ua)) return { device_name: "Mac", device_type: "电脑" };
+  return { device_name: "未知设备", device_type: "其他" };
+}
+
+function normalizeDeviceBehavior(raw) {
+  const source = raw || {};
+  const devices = {};
+  for (const item of Object.values(source.devices && typeof source.devices === "object" ? source.devices : {}).slice(0, 2000)) {
+    const deviceId = text(item?.device_id, 24);
+    if (!/^D[A-F0-9]{10}$/.test(deviceId)) continue;
+    devices[deviceId] = {
+      device_id: deviceId,
+      device_name: text(item.device_name, 40) || "未知设备",
+      device_type: text(item.device_type, 20) || "其他",
+      system: text(item.system, 30) || "其他",
+      browser: text(item.browser, 30) || "其他",
+      screen_size: text(item.screen_size, 30),
+      first_visit_time: text(item.first_visit_time, 30),
+      last_visit_time: text(item.last_visit_time, 30),
+      visit_count: Math.max(0, Number(item.visit_count) || 0),
+      remark: text(item.remark, 200),
+    };
+  }
+  const logs = (Array.isArray(source.logs) ? source.logs : []).slice(0, 15000).map((item) => ({
+    id: text(item.id, 60) || randomUUID(),
+    device_id: text(item.device_id, 24),
+    action_type: text(item.action_type, 30),
+    page_name: text(item.page_name, 40),
+    action_detail: text(item.action_detail, 180),
+    create_time: text(item.create_time, 30),
+  })).filter((item) => devices[item.device_id] && item.action_type && item.page_name && item.create_time);
+  return { devices, logs };
+}
+
+async function readDeviceBehavior() {
+  return normalizeDeviceBehavior(await store.get(DEVICE_BEHAVIOR_KEY, { type: "json", consistency: "strong" }));
+}
+
+async function writeDeviceBehavior(data) {
+  await store.setJSON(DEVICE_BEHAVIOR_KEY, data, { cacheControl: "no-store" });
+}
+
+function publicDeviceId(clientId) {
+  return `D${sha256(`xnai-device:${clientId}`).slice(0, 10).toUpperCase()}`;
+}
+
+function ensureDevice(data, request, body, countVisit = false) {
+  const clientId = text(body.visitor_id, 100);
+  if (!/^[a-zA-Z0-9_-]{8,100}$/.test(clientId)) return null;
+  const deviceId = publicDeviceId(clientId);
+  const now = new Date().toISOString();
+  const identity = deviceIdentity(request);
+  const screenSize = /^\d{2,5}x\d{2,5}$/.test(text(body.screen_size, 30)) ? text(body.screen_size, 30) : "";
+  const existing = data.devices[deviceId];
+  data.devices[deviceId] = {
+    device_id: deviceId,
+    device_name: identity.device_name,
+    device_type: identity.device_type,
+    system: devicePlatform(request),
+    browser: browserName(request),
+    screen_size: screenSize || existing?.screen_size || "",
+    first_visit_time: existing?.first_visit_time || now,
+    last_visit_time: now,
+    visit_count: Math.max(0, Number(existing?.visit_count) || 0) + (countVisit ? 1 : 0),
+    remark: existing?.remark || "",
+  };
+  return data.devices[deviceId];
+}
+
+function trimBehaviorLogs(data) {
+  const keepFrom = new Date(Date.now() - 90 * 86400000).toISOString();
+  data.logs = data.logs.filter((item) => item.create_time >= keepFrom && data.devices[item.device_id]).slice(0, 15000);
+  return data;
+}
+
 const uniquePush = (list, value) => { if (!list.includes(value)) list.push(value); };
 function normalizeAnalytics(raw) { return { days: raw?.days && typeof raw.days === "object" ? raw.days : {} }; }
 async function readAnalytics() { return normalizeAnalytics(await store.get(ANALYTICS_KEY, { type: "json", consistency: "strong" })); }
 async function writeAnalytics(data) { await store.setJSON(ANALYTICS_KEY, data, { cacheControl: "no-store" }); }
+
+async function recordDeviceVisit(request, body) {
+  const data = await readDeviceBehavior();
+  const device = ensureDevice(data, request, body, true);
+  if (!device) return null;
+  data.logs.unshift({
+    id: randomUUID(),
+    device_id: device.device_id,
+    action_type: "访问",
+    page_name: text(body.page_name, 40) || "首页",
+    action_detail: "打开网站",
+    create_time: new Date().toISOString(),
+  });
+  trimBehaviorLogs(data);
+  await writeDeviceBehavior(data);
+  return device;
+}
+
+async function recordUserAction(request) {
+  const ua = request.headers.get("user-agent") || "";
+  if (/bot|spider|crawler|headless|preview/i.test(ua)) return json({ ok: true, ignored: true }, 202);
+  const body = await bodyJson(request);
+  const actionType = text(body.action_type, 30);
+  const pageName = text(body.page_name, 40);
+  if (!actionType || !pageName) return fail("行为记录信息不完整");
+  const data = await readDeviceBehavior();
+  const device = ensureDevice(data, request, body, false);
+  if (!device) return fail("匿名设备标识无效");
+  data.logs.unshift({
+    id: randomUUID(),
+    device_id: device.device_id,
+    action_type: actionType,
+    page_name: pageName,
+    action_detail: text(body.action_detail, 180),
+    create_time: new Date().toISOString(),
+  });
+  trimBehaviorLogs(data);
+  await writeDeviceBehavior(data);
+  return json({ ok: true, device_id: device.device_id }, 202);
+}
 
 async function recordAnonymousVisit(request) {
   const ua = request.headers.get("user-agent") || "";
@@ -145,7 +285,8 @@ async function recordAnonymousVisit(request) {
   const keepFrom = analyticsDateOffset(date, -89);
   for (const key of Object.keys(analytics.days)) if (key < keepFrom || key > date) delete analytics.days[key];
   await writeAnalytics(analytics);
-  return json({ ok: true }, 202);
+  const device = await recordDeviceVisit(request, body);
+  return json({ ok: true, device_id: device?.device_id || null }, 202);
 }
 
 async function analyticsReport(url) {
@@ -174,6 +315,59 @@ async function analyticsReport(url) {
   const mobileVisitors = new Set([...(deviceVisitors.iOS || []), ...(deviceVisitors.Android || []), ...(deviceVisitors.HarmonyOS || [])]);
   const todayData = days[days.length - 1];
   return json({ range, generated_at: new Date().toISOString(), summary: { today_views: todayData.views, today_visitors: todayData.visitors, range_views: totalViews, range_visitors: rangeVisitors.size, mobile_visitors: mobileVisitors.size, mobile_share: rangeVisitors.size ? Math.round(mobileVisitors.size / rangeVisitors.size * 100) : 0 }, days });
+}
+
+function behaviorDashboard(data, url) {
+  const requested = Number(url.searchParams.get("days"));
+  const range = [7, 30, 90].includes(requested) ? requested : 7;
+  const today = beijingDateHour().date;
+  const startDate = analyticsDateOffset(today, 1 - range);
+  const weekStart = analyticsDateOffset(today, -6);
+  const logs = data.logs.filter((item) => beijingDateOf(item.create_time) >= startDate);
+  const pageCounts = {}, actionCounts = {};
+  for (const log of logs) {
+    pageCounts[log.page_name] = (pageCounts[log.page_name] || 0) + 1;
+    actionCounts[log.action_type] = (actionCounts[log.action_type] || 0) + 1;
+  }
+  const ranking = (source) => Object.entries(source).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "zh-CN")).slice(0, 10);
+  const daily = Array.from({ length: range }, (_, index) => analyticsDateOffset(today, index - range + 1)).map((date) => {
+    const dayLogs = logs.filter((item) => beijingDateOf(item.create_time) === date);
+    return { date, actions: dayLogs.length, devices: new Set(dayLogs.map((item) => item.device_id)).size };
+  });
+  const devices = Object.values(data.devices);
+  return {
+    range,
+    summary: {
+      total_devices: devices.length,
+      today_active: devices.filter((item) => beijingDateOf(item.last_visit_time) === today).length,
+      week_active: devices.filter((item) => beijingDateOf(item.last_visit_time) >= weekStart).length,
+      range_actions: logs.length,
+    },
+    page_ranking: ranking(pageCounts),
+    action_ranking: ranking(actionCounts),
+    daily,
+  };
+}
+
+function deviceDetails(data, deviceId) {
+  const device = data.devices[deviceId];
+  if (!device) return null;
+  const logs = data.logs.filter((item) => item.device_id === deviceId);
+  const pageCounts = {}, actionCounts = {};
+  for (const log of logs) {
+    pageCounts[log.page_name] = (pageCounts[log.page_name] || 0) + 1;
+    actionCounts[log.action_type] = (actionCounts[log.action_type] || 0) + 1;
+  }
+  const topName = (source) => Object.entries(source).sort((a, b) => b[1] - a[1])[0]?.[0] || "暂无";
+  return {
+    device,
+    statistics: {
+      action_count: logs.length,
+      favorite_page: topName(pageCounts),
+      favorite_action: topName(actionCounts),
+    },
+    logs: logs.slice(0, 500),
+  };
 }
 
 async function requireAdmin(request) {
@@ -444,6 +638,42 @@ async function adminRoutes(request, url, path) {
   if (!(await requireAdmin(request))) return fail("管理员登录已失效，请重新登录", 401);
   if (path === "/api/admin/session" && request.method === "GET") return json({ authenticated: true });
   if (path === "/api/admin/analytics" && request.method === "GET") return analyticsReport(url);
+  if (path === "/api/admin/user-analytics" && request.method === "GET") {
+    const data = await readDeviceBehavior();
+    return json(behaviorDashboard(data, url));
+  }
+  if (path === "/api/admin/devices" && request.method === "GET") {
+    const data = await readDeviceBehavior();
+    const query = text(url.searchParams.get("query"), 80).toLowerCase();
+    const devices = Object.values(data.devices)
+      .filter((item) => !query || [item.device_id, item.device_name, item.device_type, item.system, item.browser, item.remark].some((value) => String(value || "").toLowerCase().includes(query)))
+      .sort((a, b) => b.last_visit_time.localeCompare(a.last_visit_time));
+    return json({ devices, total: devices.length });
+  }
+  if (path.startsWith("/api/admin/devices/")) {
+    const deviceId = decodeURIComponent(path.slice("/api/admin/devices/".length)).toUpperCase();
+    if (!/^D[A-F0-9]{10}$/.test(deviceId)) return fail("设备编号无效");
+    if (request.method === "GET") {
+      const details = deviceDetails(await readDeviceBehavior(), deviceId);
+      return details ? json(details) : fail("未找到设备记录", 404);
+    }
+    if (request.method === "PATCH") {
+      const body = await bodyJson(request);
+      const data = await readDeviceBehavior();
+      if (!data.devices[deviceId]) return fail("未找到设备记录", 404);
+      data.devices[deviceId].remark = text(body.remark, 200);
+      await writeDeviceBehavior(data);
+      return json({ device: data.devices[deviceId] });
+    }
+    if (request.method === "DELETE") {
+      const data = await readDeviceBehavior();
+      if (!data.devices[deviceId]) return fail("未找到设备记录", 404);
+      delete data.devices[deviceId];
+      data.logs = data.logs.filter((item) => item.device_id !== deviceId);
+      await writeDeviceBehavior(data);
+      return json({ ok: true });
+    }
+  }
 
   if (path === "/api/admin/courses" && request.method === "GET") {
     const state = await readState();
@@ -730,6 +960,7 @@ export async function onRequest({ request }) {
   const path = url.pathname.replace(/\/+$/, "") || "/";
   try {
     if (path === "/api/analytics/visit" && request.method === "POST") return await recordAnonymousVisit(request);
+    if (path === "/api/analytics/action" && request.method === "POST") return await recordUserAction(request);
     if (path === "/api/menu-vote" && request.method === "POST") return await voteMenuDish(request);
     if ((path === "/api/live-courses" || path.startsWith("/api/live-courses/") || path === "/api/courses") && request.method === "GET") {
       const state = await readState();
