@@ -335,7 +335,7 @@ function WhyInvestModule({ comparison }) {
                 : <td colSpan={3} className="why-pending">数据计算中…</td>}</tr>;
             })}</tbody>
           </table>
-          <small className="why-note">按近10年真实行情计算 · 历史表现不代表未来收益</small>
+          <small className="why-note">按真实历史行情计算（纳指近10年，A股指数以可得历史为准） · 历史表现不代表未来收益</small>
         </article>
         <article className="why-card">
           <h3><Target/>投资方式差异</h3>
