@@ -185,7 +185,7 @@ export default function FinancePage({ data, loading, error, onReload }) {
         <article><small>上证区间高/低</small><strong>{shStats ? `${number(shStats.high)} / ${number(shStats.low)}` : "暂无数据"}</strong><em className={Number(shStats?.change) > 0 ? "up" : Number(shStats?.change) < 0 ? "down" : ""}>累计 {percent(shStats?.change)}</em></article>
       </div>}
 
-      {chartMode === "compare" && <p className="chart-note">单轴对比：两指数统一按区间起点折算为涨跌幅，鼠标悬停可查看当日真实点位。</p>}
+      {chartMode === "compare" && <p className="chart-note">单轴对比：两指数共用同一真实点位坐标轴，可直观看出纳斯达克100与上证指数的量级差距。</p>}
       {chartMode === "compare" && !shHistory.length && <div className="finance-chart-empty"><BarChart3/><p>上证指数数据暂不可用，仅展示纳斯达克100走势。</p></div>}
       {ndxSlice.length > 1
         ? <Suspense fallback={<div className="finance-chart-empty"><BarChart3/><p>正在加载走势图…</p></div>}>
