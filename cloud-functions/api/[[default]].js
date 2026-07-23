@@ -983,10 +983,12 @@ async function nasdaq100Response(url, waitUntil) {
   const needUpgrade = (cached.ndx?.history?.length || 0) < 1500 || !cached.shanghai || !cached.csi300;
   let due = age > (newYorkMarketOpen() ? 60000 : 30 * 60000);
   if (needUpgrade && age > 15 * 60000) due = true;
-  // 有缓存且非手动强制：立即返回缓存，后台异步刷新（页面秒开，数据自动追新）
-  if (due && cached.ndx?.price && !force && typeof waitUntil === "function") {
-    waitUntil(refreshMarket(cached, settings).catch((error) => console.error("market-refresh-bg", error)));
-    return json(publicMarket(cached, settings, false, url?.searchParams?.get("lite") === "1"), 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
+  // 有缓存且非手动强制：一律立即返回缓存，页面秒开；追新由定时任务执行（waitUntil 可用时顺便后台刷新）
+  if (cached.ndx?.price && !force) {
+    if (due && typeof waitUntil === "function") {
+      waitUntil(refreshMarket(cached, settings).catch((error) => console.error("market-refresh-bg", error)));
+    }
+    return json(publicMarket(cached, settings, age > 2 * 3600000, url?.searchParams?.get("lite") === "1"), 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
   }
   if (force || due || !cached.ndx?.price) {
     try {
