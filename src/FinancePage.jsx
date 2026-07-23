@@ -129,7 +129,7 @@ export default function FinancePage({ data, loading, error, onReload }) {
 
   return <section className="page finance-page">
     <header className="finance-header">
-      <div><em>FINANCE ASSISTANT</em><h1>📈 纳斯达克100投资分析</h1><p>实时行情 · 历史走势 · 估值分析 · 投资参考</p></div>
+      <div><em>FINANCE ASSISTANT</em><h1>📈 纳斯达克100（仅供开发者自行使用，不构成投资建议）</h1><p>实时行情 · 历史走势 · 估值分析 · 投资参考</p></div>
       <div className="finance-refresh-wrap">
         <button className="finance-refresh" disabled={loading} onClick={onReload}><RefreshCw className={loading ? "spin" : ""}/>{loading ? "更新中" : "刷新数据"}</button>
         <small className="finance-last-update">最后更新：{data?.update_time ? formatTime(data.update_time, true) : "—"}</small>
