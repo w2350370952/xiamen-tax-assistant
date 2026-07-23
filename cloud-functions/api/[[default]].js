@@ -433,6 +433,7 @@ async function recognizeMenuTable(imageBase64) {
 
 const text = (value, max = 200) => String(value ?? "").trim().slice(0, max);
 const finiteNumber = (value) => {
+  if (value === null || value === undefined || String(value).trim() === "") return null;
   const parsed = Number(String(value ?? "").replace(/[,%$]/g, ""));
   return Number.isFinite(parsed) ? parsed : null;
 };
@@ -443,7 +444,7 @@ function normalizeNasdaq100(raw) {
     date: text(item.date, 10),
     price: finiteNumber(item.price),
     change_percent: finiteNumber(item.change_percent),
-    pe_ratio: finiteNumber(item.pe_ratio),
+    pe_ratio: finiteNumber(item.pe_ratio) > 0 ? finiteNumber(item.pe_ratio) : null,
     created_time: text(item.created_time, 30),
     update_time: text(item.update_time, 30),
   })).filter((item) => /^20\d{2}-\d{2}-\d{2}$/.test(item.date) && item.price !== null)
@@ -451,7 +452,7 @@ function normalizeNasdaq100(raw) {
   return {
     price: finiteNumber(raw?.price),
     change_percent: finiteNumber(raw?.change_percent),
-    pe_ratio: finiteNumber(raw?.pe_ratio),
+    pe_ratio: finiteNumber(raw?.pe_ratio) > 0 ? finiteNumber(raw?.pe_ratio) : null,
     pe_source: text(raw?.pe_source, 160),
     source: text(raw?.source, 80),
     update_time: text(raw?.update_time, 30),
@@ -635,7 +636,7 @@ async function nasdaq100Response(url) {
       return json(publicNasdaq100(cached, true), 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
     }
   }
-  return json(publicNasdaq100(cached, Boolean(cached.last_error && cached.source !== "Twelve Data")), 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
+  return json(publicNasdaq100(cached, false), 200, { "Cache-Control": "no-store, no-cache, must-revalidate" });
 }
 
 function sanitizeCourse(input, fallbackId = null) {
