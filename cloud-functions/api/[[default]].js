@@ -171,7 +171,7 @@ function platformGeo(context) {
   const country = pick("country", "countryName", "country_code");
   const province = pick("province", "region", "regionName");
   const city = pick("city", "cityName");
-  const isp = pick("isp", "operator", "asn_org");
+  const isp = pick("isp", "cisp", "operator", "asn_org");
   return country || province || city ? { country, province, city, isp } : null;
 }
 
@@ -376,8 +376,8 @@ async function recordDeviceVisit(request, body, context = null) {
   const masked = maskIp(ip);
   if (masked && (device.ip_address !== masked || !device.ip_province)) {
     device.ip_address = masked;
-    // 优先用平台自带的地理位置（EdgeOne context.geo），没有再查第三方IP库
-    const geo = platformGeo(context) || await resolveIpGeo(ip);
+    // 优先查第三方IP库（中文省市+运营商），失败时用平台自带地理位置兜底
+    const geo = await resolveIpGeo(ip) || platformGeo(context);
     if (geo) {
       device.ip_country = geo.country || device.ip_country;
       device.ip_province = geo.province || device.ip_province;
