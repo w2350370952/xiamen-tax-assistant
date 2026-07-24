@@ -1004,8 +1004,11 @@ async function nasdaq100Response(url, waitUntil, request) {
   const needUpgrade = (cached.ndx?.history?.length || 0) < 1500 || !cached.shanghai || !cached.csi300;
   let due = age > (newYorkMarketOpen() ? 60000 : 30 * 60000);
   if (needUpgrade && age > 15 * 60000) due = true;
-  // 有缓存且非手动强制：一律立即返回缓存，页面秒开；追新由定时任务执行（waitUntil 可用时顺便后台刷新）
-  if (cached.ndx?.price && !force) {
+  // 有缓存且非手动强制：优先立即返回缓存，页面秒开；
+  // 但缓存超过兜底阈值（盘中15分钟/非盘中60分钟）时，即使非强制也同步回源刷新一次——
+  // 这样即使 GitHub Actions 定时任务延迟或被禁用，数据也永远不会冻结超过约1小时。
+  const fallbackAge = newYorkMarketOpen() ? 15 * 60000 : 60 * 60000;
+  if (cached.ndx?.price && !force && age <= fallbackAge) {
     if (due && typeof waitUntil === "function") {
       waitUntil(refreshMarket(cached, settings).catch((error) => console.error("market-refresh-bg", error)));
     }

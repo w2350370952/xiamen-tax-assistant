@@ -104,8 +104,15 @@ function StudentApp(){
     window.addEventListener("focus",syncCourses);
     return()=>{clearInterval(courseTimer);document.removeEventListener("visibilitychange",onVisible);window.removeEventListener("focus",syncCourses);};
   },[major]);
-  const loadFinance=(mode="full")=>{const force=mode==="force";const showSpinner=force||(!financeData&&mode==="lite");const url=force?"/api/nasdaq100?refresh=manual&full=1":(mode==="lite"?"/api/nasdaq100":"/api/nasdaq100?full=1");if(showSpinner)setFinanceLoading(true);setFinanceError("");return fetch(url,{cache:"no-store"}).then(async response=>{const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.detail||"行情获取失败，请稍后重试");setFinanceData(data);try{localStorage.setItem("xnai_finance_cache_v1",JSON.stringify(data));}catch{}}).catch(error=>{setFinanceError(financeData?"行情获取失败，请稍后重试（当前显示为最近一次有效数据）":(error.message||"行情获取失败，请稍后重试"));}).finally(()=>{if(showSpinner)setFinanceLoading(false);});};
-  useEffect(()=>{const first=financeData?loadFinance("full"):loadFinance("lite").finally(()=>loadFinance("full"));Promise.resolve(first).catch(()=>{});const timer=setInterval(()=>loadFinance("full"),300000);return()=>clearInterval(timer);},[]);
+  const loadFinance=(mode="full")=>{const force=mode==="force";const showSpinner=force||(!financeData&&mode==="lite");const bust=`_t=${Date.now()}`;const url=force?`/api/nasdaq100?refresh=manual&full=1&${bust}`:(mode==="lite"?`/api/nasdaq100?${bust}`:`/api/nasdaq100?full=1&${bust}`);if(showSpinner)setFinanceLoading(true);setFinanceError("");return fetch(url,{cache:"no-store"}).then(async response=>{const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.detail||"行情获取失败，请稍后重试");setFinanceData(data);try{localStorage.setItem("xnai_finance_cache_v1",JSON.stringify(data));}catch{}}).catch(error=>{setFinanceError(financeData?"行情获取失败，请稍后重试（当前显示为最近一次有效数据）":(error.message||"行情获取失败，请稍后重试"));}).finally(()=>{if(showSpinner)setFinanceLoading(false);});};
+  useEffect(()=>{const first=financeData?loadFinance("full"):loadFinance("lite").finally(()=>loadFinance("full"));Promise.resolve(first).catch(()=>{});
+    // 盘中每60秒、非盘中每5分钟自动拉取最新数据
+    const intervalMs=()=>{try{const day=parseInt(new Date().toLocaleString("en-US",{timeZone:"America/New_York",weekday:"numeric"}));const hm=new Date().toLocaleString("en-US",{timeZone:"America/New_York",hour12:false,hour:"2-digit",minute:"2-digit"});const[h,m]=hm.split(":").map(Number);const mins=h*60+m;const open=day>=1&&day<=5&&mins>=9*60+30&&mins<16*60;return open?60000:300000;}catch{return 300000;}};
+    let timer=setTimeout(function tick(){loadFinance("full");timer=setTimeout(tick,intervalMs());},intervalMs());
+    // 切回页面/窗口重获焦点时，若数据超过2分钟未更新则立即刷新
+    const onWake=()=>{try{const t=Date.parse(financeData?.update_time||0);if(!financeData||Date.now()-t>120000)loadFinance("full");}catch{loadFinance("full");}};
+    document.addEventListener("visibilitychange",onWake);window.addEventListener("focus",onWake);
+    return()=>{clearTimeout(timer);document.removeEventListener("visibilitychange",onWake);window.removeEventListener("focus",onWake);};},[]);
   const today=iso(now), todayCourses=courses.filter(c=>c.date===today);
   const courseTime=(course,field)=>new Date(`${course.date}T${course[field]||"00:00"}:00`).getTime();
   const passedCourses=courses.filter(course=>courseTime(course,"end_time")<=now.getTime()).length;
