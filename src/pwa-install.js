@@ -1,5 +1,7 @@
 // PWA 安装引导：横幅状态、平台识别、系统安装弹窗封装
-export const BANNER_KEY = "xnai_life_app_install_banner_dismissed";
+// hideInstallBanner 为主键；旧键保留读取以兼容已关闭过的老用户
+export const BANNER_KEY = "hideInstallBanner";
+const LEGACY_BANNER_KEY = "xnai_life_app_install_banner_dismissed";
 
 let deferredPrompt = null;
 let initialized = false;
@@ -50,15 +52,17 @@ export function isWeChat() {
 
 export function installBannerDismissed() {
   try {
-    return Boolean(JSON.parse(localStorage.getItem(BANNER_KEY)));
+    if (localStorage.getItem(BANNER_KEY) === "true") return true;
+    return Boolean(JSON.parse(localStorage.getItem(LEGACY_BANNER_KEY)));
   } catch {
-    return false;
+    return localStorage.getItem(BANNER_KEY) === "true";
   }
 }
 
 export function dismissInstallBanner() {
   try {
-    localStorage.setItem(BANNER_KEY, JSON.stringify({ dismissed: true, dismissedAt: new Date().toISOString() }));
+    localStorage.setItem(BANNER_KEY, "true");
+    localStorage.setItem(LEGACY_BANNER_KEY, JSON.stringify({ dismissed: true, dismissedAt: new Date().toISOString() }));
   } catch { /* localStorage 不可用时静默 */ }
 }
 

@@ -42,7 +42,7 @@ function guideContent(channel) {
     return { icon: <MoreHorizontal />, title: "请在浏览器中打开", steps: ["点击微信右上角「···」", "选择「在浏览器中打开」（Chrome 或系统浏览器）", "打开浏览器菜单，选择「添加到主屏幕」"] };
   }
   if (channel === "ios") {
-    return { icon: <Share />, title: "添加到主屏幕", steps: ["请使用 Safari 打开本网站", "点击底部「分享」按钮", "选择「添加到主屏幕」", "点击右上角「添加」"] };
+    return { icon: <Share />, title: "iPhone 添加方式", steps: ["① 点击浏览器底部「分享」按钮", "② 点击「添加到主屏幕」", "③ 点击「添加」"] };
   }
   return { icon: <Globe />, title: "如何添加到桌面", steps: ["电脑端：使用 Chrome / Edge 打开本站，地址栏右侧点击「安装」图标", "Android：浏览器菜单中选择「添加到主屏幕」", "iPhone：Safari 底部分享按钮 →「添加到主屏幕」"] };
 }
@@ -70,14 +70,15 @@ export function InstallBanner() {
   if (!visible || installed) return showGuide ? <InstallGuideModal channel={channel} onClose={() => setShowGuide(false)} /> : null;
   const close = () => { dismissInstallBanner(); setVisible(false); };
   const onAdd = async () => { const result = await install(); if (result === "done") { setVisible(false); return; } if (result === "guide") setShowGuide(true); };
-  const bannerText = channel === "wechat"
-    ? "在微信里打开较慢？建议用浏览器打开本站，再从浏览器菜单添加到手机桌面，以后一键直达。"
-    : "厦国会生活助手现已支持添加到手机桌面，打开更方便。";
-  const buttonText = channel === "wechat" ? "查看方法" : channel === "native" ? "立即添加" : "查看方法";
+  const wechat = channel === "wechat";
+  const buttonText = wechat ? "查看方法" : channel === "native" ? "立即添加" : "查看方法";
   return (
     <div className="install-banner" role="region" aria-label="添加到手机桌面提示">
-      <Smartphone size={17} />
-      <p>{bannerText}</p>
+      <Smartphone size={18} />
+      <span className="install-banner-text">
+        <strong>厦国会生活助手</strong>
+        <p>{wechat ? "在微信里打开较慢？建议用浏览器打开本站，再从浏览器菜单添加到手机桌面，以后一键直达。" : "现在网页支持添加到手机桌面，像 APP 一样快速打开！"}</p>
+      </span>
       <button className="install-banner-add" onClick={onAdd}>{buttonText}</button>
       <button className="install-banner-close" onClick={close} aria-label="关闭提示"><X size={16} /></button>
       {showGuide && <InstallGuideModal channel={channel} onClose={() => setShowGuide(false)} />}

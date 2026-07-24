@@ -2854,11 +2854,22 @@ to {
   color: #33507c;
 }
 .install-banner > svg { flex: none; color: #2f6fed; }
-.install-banner p {
+.install-banner-text {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.install-banner-text strong {
+  color: #22385c;
+  font-size: 13px;
+  font-weight: 800;
+}
+.install-banner-text p {
   margin: 0;
-  font-size: 12.5px;
+  color: #33507c;
+  font-size: 12px;
   line-height: 1.5;
 }
 .install-banner-add {
@@ -2988,7 +2999,7 @@ to {
 }
 @media (max-width: 640px) {
   .install-banner { flex-wrap: wrap; row-gap: 8px; }
-  .install-banner p { flex-basis: calc(100% - 30px); order: 2; }
+  .install-banner-text { flex-basis: calc(100% - 62px); order: 2; }
   .install-banner > svg { order: 1; }
   .install-banner-close { order: 1; margin-left: auto; }
   .install-banner-add { order: 3; width: 100%; }
