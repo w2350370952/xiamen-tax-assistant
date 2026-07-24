@@ -75,7 +75,7 @@ function StudentApp(){
   const [searchQuery,setSearchQuery]=useState("");
   const [dayViewDate,setDayViewDate]=useState(null);
   const initialBeijing=beijingClock(new Date());
-  const [menu,setMenu]=useState(null);
+  const [menu,setMenu]=useState(()=>{try{return JSON.parse(localStorage.getItem("xnai_menu_cache_v1"))||null;}catch{return null;}});
   const [menuVersion,setMenuVersion]=useState(null);
   const [menuRatings,setMenuRatings]=useState({});
   const [menuVotes,setMenuVotes]=useState(storedMenuVotes);
@@ -92,7 +92,7 @@ function StudentApp(){
   useEffect(()=>{try{const now=Date.now(),last=Number(sessionStorage.getItem("xnai_last_visit")||0);if(now-last<30000)return;sessionStorage.setItem("xnai_last_visit",String(now));fetch("/api/analytics/visit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...visitorMeta(),page_name:"首页"}),keepalive:true}).catch(()=>{});}catch{}},[]);
   useEffect(()=>{const clock=setInterval(()=>setNow(new Date()),1000);return()=>clearInterval(clock);},[]);
   useEffect(()=>{
-    const syncMenu=()=>{const requestId=++menuRequestId.current;return fetch(`/api/live-menu?refresh=${Date.now()}-${requestId}`,{cache:"no-store",headers:{"Cache-Control":"no-cache","Pragma":"no-cache"}}).then(response=>response.ok?response.json():Promise.reject()).then(data=>{if(requestId!==menuRequestId.current)return;setMenu(data.menu||null);setMenuVersion(data.version||null);setMenuRatings(data.ratings||{});setMenuSyncedAt(new Date());}).catch(()=>{});};
+    const syncMenu=()=>{const requestId=++menuRequestId.current;return fetch(`/api/live-menu?refresh=${Date.now()}-${requestId}`,{cache:"no-store",headers:{"Cache-Control":"no-cache","Pragma":"no-cache"}}).then(response=>response.ok?response.json():Promise.reject()).then(data=>{if(requestId!==menuRequestId.current)return;setMenu(data.menu||null);try{localStorage.setItem("xnai_menu_cache_v1",JSON.stringify(data.menu||null));}catch{}setMenuVersion(data.version||null);setMenuRatings(data.ratings||{});setMenuSyncedAt(new Date());}).catch(()=>{});};
     const onVisible=()=>{if(document.visibilityState==="visible")syncMenu();};
     const onStorage=event=>{if(event.key==="xnai_menu_updated")syncMenu();};
     const onMessage=event=>{if(event.origin===window.location.origin&&event.data?.type==="xnai-menu-updated")syncMenu();};

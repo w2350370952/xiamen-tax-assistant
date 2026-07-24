@@ -77,22 +77,33 @@ function normalizeState(raw) {
   };
 }
 
+// 实例内20秒缓存：强一致KV读延迟高（1.5秒+），热实例直接复用，写入时立即失效
+let stateMemCache = { data: null, time: 0 };
 async function readState() {
+  if (stateMemCache.data && Date.now() - stateMemCache.time < 20000) return stateMemCache.data;
   const state = await store.get(STATE_KEY, { type: "json", consistency: "strong" });
-  return normalizeState(state);
+  const normalized = normalizeState(state);
+  stateMemCache = { data: normalized, time: Date.now() };
+  return normalized;
 }
 
 async function writeState(state) {
   await store.setJSON(STATE_KEY, state, { cacheControl: "no-store" });
+  stateMemCache = { data: normalizeState(state), time: Date.now() };
 }
 
+let ratingsMemCache = { data: null, time: 0 };
 async function readMenuRatings(fallback = {}) {
+  if (ratingsMemCache.data && Date.now() - ratingsMemCache.time < 20000) return ratingsMemCache.data;
   const stored = await store.get(MENU_RATINGS_KEY, { type: "json", consistency: "strong" });
-  return sanitizeMenuRatings(stored || fallback);
+  const ratings = sanitizeMenuRatings(stored || fallback);
+  ratingsMemCache = { data: ratings, time: Date.now() };
+  return ratings;
 }
 
 async function writeMenuRatings(ratings) {
   await store.setJSON(MENU_RATINGS_KEY, ratings, { cacheControl: "no-store" });
+  ratingsMemCache = { data: sanitizeMenuRatings(ratings), time: Date.now() };
 }
 
 function beijingDateHour(value = new Date()) {
