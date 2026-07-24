@@ -135,12 +135,47 @@ function browserName(request) {
   return "其他";
 }
 
-// 从代理/CDN请求头中解析真实客户端IP（只用于城市级归属地统计）
-function clientIp(request) {
+const IP_HEADER_NAMES = ["x-forwarded-for", "x-real-ip", "eo-client-ip", "cf-connecting-ip", "x-client-ip", "true-client-ip"];
+
+function ipCandidates(request) {
   const headers = request.headers;
-  const xff = (headers.get("x-forwarded-for") || "").split(",")[0].trim();
-  const ip = xff || (headers.get("eo-client-ip") || "").trim() || (headers.get("x-real-ip") || "").trim() || (headers.get("cf-connecting-ip") || "").trim();
-  return /^[0-9a-fA-F:.]{3,45}$/.test(ip) ? ip : "";
+  const candidates = [];
+  // 优先级：X-Forwarded-For（取第一个，即最原始客户端）→ X-Real-IP → 平台/CDN 专用头
+  const xff = (headers.get("x-forwarded-for") || "").split(",").map((item) => item.trim()).filter(Boolean);
+  candidates.push(...xff);
+  for (const name of IP_HEADER_NAMES.slice(1)) {
+    const value = (headers.get(name) || "").trim();
+    if (value) candidates.push(value);
+  }
+  return candidates;
+}
+
+function validIp(ip) {
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(ip) || /^(?=.*[0-9a-fA-F:]{3,45}$)[0-9a-fA-F:]+$/.test(ip);
+}
+
+function isPrivateIp(ip) {
+  return /^(10\.|127\.|0\.|169\.254\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|::1$|fc|fd|fe80)/i.test(ip);
+}
+
+// 从代理/CDN请求头中解析真实客户端IP：优先公网IP，都没有时退回第一个合法IP
+function clientIp(request) {
+  const candidates = ipCandidates(request).filter(validIp);
+  return candidates.find((ip) => !isPrivateIp(ip)) || candidates[0] || "";
+}
+
+// IP调试：输出服务器实际收到的全部IP相关信息
+function clientIpDebug(request) {
+  const headers = request.headers;
+  const received = {};
+  for (const name of IP_HEADER_NAMES) received[name.replaceAll("-", "_")] = headers.get(name) || "";
+  return {
+    ...received,
+    client_host: "", // 函数运行时拿不到TCP对端地址，只能依赖代理头
+    forwarded: headers.get("forwarded") || "",
+    user_agent: (headers.get("user-agent") || "").slice(0, 150),
+    final_ip: clientIp(request),
+  };
 }
 
 // 隐私要求：不保存完整IP，只保留前两段（IPv4）/前三段（IPv6）
@@ -1689,6 +1724,7 @@ export async function onRequest(context) {
     if (path === "/api/analytics/action" && request.method === "POST") return await recordUserAction(request);
     if (path === "/api/menu-vote" && request.method === "POST") return await voteMenuDish(request);
     if (path === "/api/nasdaq100" && request.method === "GET") return await nasdaq100Response(url, typeof waitUntilFn === "function" ? waitUntilFn : null, request);
+    if (path === "/api/debug/ip" && request.method === "GET") return json(clientIpDebug(request));
     if ((path === "/api/live-courses" || path.startsWith("/api/live-courses/") || path === "/api/courses") && request.method === "GET") {
       const state = await readState();
       const pathMajor = path.startsWith("/api/live-courses/") ? decodeURIComponent(path.slice("/api/live-courses/".length)) : null;
