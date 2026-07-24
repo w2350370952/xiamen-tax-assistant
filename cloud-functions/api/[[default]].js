@@ -81,7 +81,7 @@ function normalizeState(raw) {
 let stateMemCache = { data: null, time: 0 };
 async function readState() {
   if (stateMemCache.data && Date.now() - stateMemCache.time < 20000) return stateMemCache.data;
-  const state = await store.get(STATE_KEY, { type: "json", consistency: "strong" });
+  const state = await store.get(STATE_KEY, { type: "json", consistency: "eventual" });
   const normalized = normalizeState(state);
   stateMemCache = { data: normalized, time: Date.now() };
   return normalized;
@@ -95,7 +95,7 @@ async function writeState(state) {
 let ratingsMemCache = { data: null, time: 0 };
 async function readMenuRatings(fallback = {}) {
   if (ratingsMemCache.data && Date.now() - ratingsMemCache.time < 20000) return ratingsMemCache.data;
-  const stored = await store.get(MENU_RATINGS_KEY, { type: "json", consistency: "strong" });
+  const stored = await store.get(MENU_RATINGS_KEY, { type: "json", consistency: "eventual" });
   const ratings = sanitizeMenuRatings(stored || fallback);
   ratingsMemCache = { data: ratings, time: Date.now() };
   return ratings;
@@ -765,7 +765,7 @@ let marketMemCache = { time: 0, data: null };
 
 async function readMarket() {
   if (marketMemCache.data && Date.now() - marketMemCache.time < 30000) return marketMemCache.data;
-  let stored = await store.get(MARKET_KEY, { type: "json", consistency: "strong" });
+  let stored = await store.get(MARKET_KEY, { type: "json", consistency: "eventual" });
   if (!stored) {
     // 首次升级：从旧版纳斯达克100缓存迁移已有历史数据
     const legacy = await store.get(NASDAQ100_KEY, { type: "json", consistency: "strong" });
