@@ -35,7 +35,16 @@ const storedMajor = () => { try { const value=localStorage.getItem("xnai_major")
 const rememberMajor = value => { try { localStorage.setItem("xnai_major",value); } catch {} document.cookie=`xnai_major=${encodeURIComponent(value)}; Path=/; Max-Age=31536000; SameSite=Lax; Secure`; };
 const anonymousVisitorId = () => { try { const saved=localStorage.getItem("xnai_anonymous_visitor");if(saved)return saved;const created=globalThis.crypto?.randomUUID?.()||`${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;localStorage.setItem("xnai_anonymous_visitor",created);return created; } catch { return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`; } };
 const screenSize=()=>`${Math.round(window.screen?.width||window.innerWidth||0)}x${Math.round(window.screen?.height||window.innerHeight||0)}`;
-const trackUserAction=(page_name,action_type,action_detail="")=>fetch("/api/analytics/action",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({visitor_id:anonymousVisitorId(),screen_size:screenSize(),page_name,action_type,action_detail}),keepalive:true}).catch(()=>{});
+// 浏览器指纹：综合浏览器/系统/屏幕/时区/语言/Canvas/WebGL特征生成，仅用于统计分析，不作为绝对身份认证
+const browserFingerprint=()=>{try{const saved=localStorage.getItem("xnai_fingerprint");if(saved)return saved;
+  const nav=navigator||{};let canvasHash="";try{const c=document.createElement("canvas");c.width=240;c.height=40;const ctx=c.getContext("2d");ctx.textBaseline="top";ctx.font="14px Arial";ctx.fillStyle="#f60";ctx.fillRect(0,0,100,20);ctx.fillStyle="#069";ctx.fillText("xnai-fp·指纹",2,2);canvasHash=c.toDataURL().slice(-64);}catch{}
+  let webgl="";try{const gl=document.createElement("canvas").getContext("webgl");const dbg=gl?.getExtension("WEBGL_debug_renderer_info");webgl=dbg?String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)):"";}catch{}
+  const raw=[nav.userAgent,nav.platform,nav.language,(nav.languages||[]).join(","),window.screen?.width,window.screen?.height,window.screen?.colorDepth,new Date().getTimezoneOffset(),nav.hardwareConcurrency,canvasHash,webgl].join("|");
+  let h=0x811c9dc5;for(let i=0;i<raw.length;i++){h^=raw.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0;}
+  const id=`fp${h.toString(16).padStart(8,"0")}${raw.length.toString(36)}`;localStorage.setItem("xnai_fingerprint",id);return id;}catch{return"fp-unavailable";}};
+const browserVersion=()=>{const m=(navigator.userAgent||"").match(/(Edg|OPR|Chrome|CriOS|Firefox|Version)[\/ ]([\d.]+)/i);return m?`${m[1]}/${m[2]}`:"";};
+const visitorMeta=()=>({visitor_id:anonymousVisitorId(),screen_size:screenSize(),fingerprint_id:browserFingerprint(),language:navigator.language||"",timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||"",browser_version:browserVersion()});
+const trackUserAction=(page_name,action_type,action_detail="")=>fetch("/api/analytics/action",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...visitorMeta(),page_name,action_type,action_detail}),keepalive:true}).catch(()=>{});
 const beijingClock = value => { const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Shanghai",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(value);const map=Object.fromEntries(parts.map(part=>[part.type,part.value]));return {date:`${map.year}-${map.month}-${map.day}`,hour:Number(map.hour),minute:Number(map.minute),time:`${map.hour}:${map.minute}`}; };
 const mealForHour = hour => hour<9?"breakfast":hour<14?"lunch":"dinner";
 const mealLabels = {breakfast:"早餐",lunch:"午餐",dinner:"晚餐"};
@@ -80,7 +89,7 @@ function StudentApp(){
   const [financeError,setFinanceError]=useState("");
   const menuRequestId=useRef(0);
 
-  useEffect(()=>{try{const now=Date.now(),last=Number(sessionStorage.getItem("xnai_last_visit")||0);if(now-last<30000)return;sessionStorage.setItem("xnai_last_visit",String(now));fetch("/api/analytics/visit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({visitor_id:anonymousVisitorId(),screen_size:screenSize(),page_name:"首页"}),keepalive:true}).catch(()=>{});}catch{}},[]);
+  useEffect(()=>{try{const now=Date.now(),last=Number(sessionStorage.getItem("xnai_last_visit")||0);if(now-last<30000)return;sessionStorage.setItem("xnai_last_visit",String(now));fetch("/api/analytics/visit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...visitorMeta(),page_name:"首页"}),keepalive:true}).catch(()=>{});}catch{}},[]);
   useEffect(()=>{const clock=setInterval(()=>setNow(new Date()),1000);return()=>clearInterval(clock);},[]);
   useEffect(()=>{
     const syncMenu=()=>{const requestId=++menuRequestId.current;return fetch(`/api/live-menu?refresh=${Date.now()}-${requestId}`,{cache:"no-store",headers:{"Cache-Control":"no-cache","Pragma":"no-cache"}}).then(response=>response.ok?response.json():Promise.reject()).then(data=>{if(requestId!==menuRequestId.current)return;setMenu(data.menu||null);setMenuVersion(data.version||null);setMenuRatings(data.ratings||{});setMenuSyncedAt(new Date());}).catch(()=>{});};

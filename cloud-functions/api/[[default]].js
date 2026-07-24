@@ -135,6 +135,74 @@ function browserName(request) {
   return "其他";
 }
 
+// 从代理/CDN请求头中解析真实客户端IP（只用于城市级归属地统计）
+function clientIp(request) {
+  const headers = request.headers;
+  const xff = (headers.get("x-forwarded-for") || "").split(",")[0].trim();
+  const ip = xff || (headers.get("eo-client-ip") || "").trim() || (headers.get("x-real-ip") || "").trim() || (headers.get("cf-connecting-ip") || "").trim();
+  return /^[0-9a-fA-F:.]{3,45}$/.test(ip) ? ip : "";
+}
+
+// 隐私要求：不保存完整IP，只保留前两段（IPv4）/前三段（IPv6）
+function maskIp(ip) {
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) return `${ip.split(".").slice(0, 2).join(".")}.*.*`;
+  if (ip.includes(":")) return `${ip.split(":").slice(0, 3).join(":")}::*`;
+  return "";
+}
+
+const IP_GEO_KEY = "ip-geo-cache-v1.json";
+async function readIpGeoCache() {
+  const cache = await store.get(IP_GEO_KEY, { type: "json" });
+  return cache && typeof cache === "object" ? cache : {};
+}
+
+// 通过免费IP库解析城市级归属地（国家/省份/城市/运营商），多源容错 + 按网段缓存
+async function resolveIpGeo(ip) {
+  if (!ip) return null;
+  const cacheKey = ip.includes(".") ? ip.split(".").slice(0, 3).join(".") : ip.split(":").slice(0, 4).join(":");
+  let cache = {};
+  try { cache = await readIpGeoCache(); } catch { cache = {}; }
+  if (cache[cacheKey]) return cache[cacheKey];
+  const attempts = [
+    async () => {
+      const response = await fetch(`https://ip.useragentinfo.com/json?ip=${encodeURIComponent(ip)}`, { signal: AbortSignal.timeout(4000) });
+      const data = await response.json();
+      if (data?.code === 200 && (data.province || data.city)) return { country: text(data.country, 30), province: text(data.province, 30), city: text(data.city, 30), isp: text(data.isp, 40) };
+      return null;
+    },
+    async () => {
+      const response = await fetch(`https://api.vore.top/api/IPdata?ip=${encodeURIComponent(ip)}`, { signal: AbortSignal.timeout(4000) });
+      const data = await response.json();
+      const ad = data?.adcode || {};
+      if (data?.code === 200 && (ad.p || ad.province || ad.c || ad.city)) return { country: text(ad.nation || "中国", 30), province: text(ad.province || ad.p, 30), city: text(ad.city || ad.c, 30), isp: text(ad.isp || ad.operator || ad.r, 40) };
+      return null;
+    },
+    async () => {
+      const response = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?lang=zh-CN&fields=status,country,regionName,city,isp`, { signal: AbortSignal.timeout(4000) });
+      const data = await response.json();
+      if (data?.status === "success") return { country: text(data.country, 30), province: text(data.regionName, 30), city: text(data.city, 30), isp: text(data.isp, 40) };
+      return null;
+    },
+  ];
+  for (const attempt of attempts) {
+    try {
+      const geo = await attempt();
+      if (geo) {
+        cache[cacheKey] = geo;
+        const keys = Object.keys(cache);
+        if (keys.length > 800) delete cache[keys[0]];
+        await store.setJSON(IP_GEO_KEY, cache, { cacheControl: "no-store" }).catch(() => {});
+        return geo;
+      }
+    } catch { /* 尝试下一个数据源 */ }
+  }
+  return null;
+}
+
+function publicFingerprintId(raw) {
+  return `F${sha256(`xnai-fp:${raw}`).slice(0, 10).toUpperCase()}`;
+}
+
 function deviceIdentity(request) {
   const ua = request.headers.get("user-agent") || "";
   if (/iPad/i.test(ua) || (/Macintosh/i.test(ua) && /Mobile/i.test(ua))) return { device_name: "iPad", device_type: "平板" };
@@ -158,7 +226,16 @@ function normalizeDeviceBehavior(raw) {
       device_type: text(item.device_type, 20) || "其他",
       system: text(item.system, 30) || "其他",
       browser: text(item.browser, 30) || "其他",
+      browser_version: text(item.browser_version, 40),
       screen_size: text(item.screen_size, 30),
+      language: text(item.language, 20),
+      timezone: text(item.timezone, 40),
+      fingerprint_id: text(item.fingerprint_id, 24),
+      ip_address: text(item.ip_address, 45),
+      ip_country: text(item.ip_country, 30),
+      ip_province: text(item.ip_province, 30),
+      ip_city: text(item.ip_city, 30),
+      ip_isp: text(item.ip_isp, 40),
       first_visit_time: text(item.first_visit_time, 30),
       last_visit_time: text(item.last_visit_time, 30),
       visit_count: Math.max(0, Number(item.visit_count) || 0),
@@ -196,13 +273,25 @@ function ensureDevice(data, request, body, countVisit = false) {
   const identity = deviceIdentity(request);
   const screenSize = /^\d{2,5}x\d{2,5}$/.test(text(body.screen_size, 30)) ? text(body.screen_size, 30) : "";
   const existing = data.devices[deviceId];
+  // 浏览器指纹：仅用于统计分析，不作为绝对身份认证
+  const fpRaw = text(body.fingerprint_id, 100);
+  const fingerprintId = /^[a-zA-Z0-9_-]{8,100}$/.test(fpRaw) ? publicFingerprintId(fpRaw) : (existing?.fingerprint_id || "");
   data.devices[deviceId] = {
     device_id: deviceId,
     device_name: identity.device_name,
     device_type: identity.device_type,
     system: devicePlatform(request),
     browser: browserName(request),
+    browser_version: text(body.browser_version, 40) || existing?.browser_version || "",
     screen_size: screenSize || existing?.screen_size || "",
+    language: text(body.language, 20) || existing?.language || "",
+    timezone: text(body.timezone, 40) || existing?.timezone || "",
+    fingerprint_id: fingerprintId,
+    ip_address: existing?.ip_address || "",
+    ip_country: existing?.ip_country || "",
+    ip_province: existing?.ip_province || "",
+    ip_city: existing?.ip_city || "",
+    ip_isp: existing?.ip_isp || "",
     first_visit_time: existing?.first_visit_time || now,
     last_visit_time: now,
     visit_count: Math.max(0, Number(existing?.visit_count) || 0) + (countVisit ? 1 : 0),
@@ -226,6 +315,19 @@ async function recordDeviceVisit(request, body) {
   const data = await readDeviceBehavior();
   const device = ensureDevice(data, request, body, true);
   if (!device) return null;
+  // IP归属地：仅保存城市级信息；IP变化或归属地缺失时才重新解析
+  const ip = clientIp(request);
+  const masked = maskIp(ip);
+  if (masked && (device.ip_address !== masked || !device.ip_province)) {
+    device.ip_address = masked;
+    const geo = await resolveIpGeo(ip);
+    if (geo) {
+      device.ip_country = geo.country;
+      device.ip_province = geo.province;
+      device.ip_city = geo.city;
+      device.ip_isp = geo.isp;
+    }
+  }
   data.logs.unshift({
     id: randomUUID(),
     device_id: device.device_id,
@@ -361,6 +463,12 @@ function deviceDetails(data, deviceId) {
     actionCounts[log.action_type] = (actionCounts[log.action_type] || 0) + 1;
   }
   const topName = (source) => Object.entries(source).sort((a, b) => b[1] - a[1])[0]?.[0] || "暂无";
+  // 关联设备：指纹相同但设备码不同 → 疑似同一用户
+  const related = device.fingerprint_id
+    ? Object.values(data.devices)
+        .filter((item) => item.fingerprint_id === device.fingerprint_id && item.device_id !== deviceId)
+        .map((item) => ({ device_id: item.device_id, device_name: item.device_name, device_type: item.device_type, system: item.system, browser: item.browser, ip_city: item.ip_city, last_visit_time: item.last_visit_time, visit_count: item.visit_count }))
+    : [];
   return {
     device,
     statistics: {
@@ -368,6 +476,7 @@ function deviceDetails(data, deviceId) {
       favorite_page: topName(pageCounts),
       favorite_action: topName(actionCounts),
     },
+    related_devices: related,
     logs: logs.slice(0, 500),
   };
 }
@@ -1241,10 +1350,29 @@ async function adminRoutes(request, url, path) {
   if (path === "/api/admin/devices" && request.method === "GET") {
     const data = await readDeviceBehavior();
     const query = text(url.searchParams.get("query"), 80).toLowerCase();
-    const devices = Object.values(data.devices)
-      .filter((item) => !query || [item.device_id, item.device_name, item.device_type, item.system, item.browser, item.remark].some((value) => String(value || "").toLowerCase().includes(query)))
-      .sort((a, b) => b.last_visit_time.localeCompare(a.last_visit_time));
+    const all = Object.values(data.devices);
+    // 同一指纹出现在多个设备码下 → 标记「疑似同一用户」
+    const fpCount = {};
+    for (const item of all) if (item.fingerprint_id) fpCount[item.fingerprint_id] = (fpCount[item.fingerprint_id] || 0) + 1;
+    const devices = all
+      .filter((item) => !query || [item.device_id, item.device_name, item.device_type, item.system, item.browser, item.fingerprint_id, item.ip_province, item.ip_city, item.ip_isp, item.remark].some((value) => String(value || "").toLowerCase().includes(query)))
+      .sort((a, b) => b.last_visit_time.localeCompare(a.last_visit_time))
+      .map((item) => ({ ...item, suspected_same_user: Boolean(item.fingerprint_id && fpCount[item.fingerprint_id] > 1) }));
     return json({ devices, total: devices.length });
+  }
+  if (path === "/api/admin/user-regions" && request.method === "GET") {
+    const data = await readDeviceBehavior();
+    const provinces = {}, cities = {}, isps = {};
+    for (const item of Object.values(data.devices)) {
+      const province = item.ip_province || "未知";
+      const city = item.ip_city ? `${item.ip_province || ""}${item.ip_city}`.trim() : "未知";
+      const isp = item.ip_isp || "未知";
+      provinces[province] = (provinces[province] || 0) + 1;
+      cities[city] = (cities[city] || 0) + 1;
+      isps[isp] = (isps[isp] || 0) + 1;
+    }
+    const rank = (source, limit = 30) => Object.entries(source).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "zh-CN")).slice(0, limit);
+    return json({ provinces: rank(provinces), cities: rank(cities), isps: rank(isps, 10) });
   }
   if (path.startsWith("/api/admin/devices/")) {
     const deviceId = decodeURIComponent(path.slice("/api/admin/devices/".length)).toUpperCase();
