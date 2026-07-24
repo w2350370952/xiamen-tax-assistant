@@ -158,23 +158,44 @@ function isPrivateIp(ip) {
   return /^(10\.|127\.|0\.|169\.254\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|::1$|fc|fd|fe80)/i.test(ip);
 }
 
-// 从代理/CDN请求头中解析真实客户端IP：优先公网IP，都没有时退回第一个合法IP
-function clientIp(request) {
+// 平台提供的真实客户端IP与地理位置（EdgeOne Pages Functions 官方能力，最可靠）
+function platformClientIp(context) {
+  const ip = text(context?.clientIp, 45) || text(context?.request?.eo?.clientIp, 45) || "";
+  return validIp(ip) ? ip : "";
+}
+
+function platformGeo(context) {
+  const geo = context?.geo || context?.request?.eo?.geo || null;
+  if (!geo || typeof geo !== "object") return null;
+  const pick = (...keys) => { for (const key of keys) { const value = text(geo[key], 40); if (value) return value; } return ""; };
+  const country = pick("country", "countryName", "country_code");
+  const province = pick("province", "region", "regionName");
+  const city = pick("city", "cityName");
+  const isp = pick("isp", "operator", "asn_org");
+  return country || province || city ? { country, province, city, isp } : null;
+}
+
+// 从代理/CDN请求头中解析真实客户端IP：平台IP最优先，其次公网IP，最后退回第一个合法IP
+function clientIp(request, context = null) {
+  const fromPlatform = platformClientIp(context);
+  if (fromPlatform) return fromPlatform;
   const candidates = ipCandidates(request).filter(validIp);
   return candidates.find((ip) => !isPrivateIp(ip)) || candidates[0] || "";
 }
 
 // IP调试：输出服务器实际收到的全部IP相关信息
-function clientIpDebug(request) {
+function clientIpDebug(request, context = null) {
   const headers = request.headers;
   const received = {};
   for (const name of IP_HEADER_NAMES) received[name.replaceAll("-", "_")] = headers.get(name) || "";
   return {
+    context_client_ip: text(context?.clientIp, 45) || "",
+    context_geo: context?.geo || context?.request?.eo?.geo || null,
     ...received,
-    client_host: "", // 函数运行时拿不到TCP对端地址，只能依赖代理头
+    client_host: "", // 函数运行时拿不到TCP对端地址，只能依赖平台字段或代理头
     forwarded: headers.get("forwarded") || "",
     user_agent: (headers.get("user-agent") || "").slice(0, 150),
-    final_ip: clientIp(request),
+    final_ip: clientIp(request, context),
   };
 }
 
@@ -346,21 +367,22 @@ function normalizeAnalytics(raw) { return { days: raw?.days && typeof raw.days =
 async function readAnalytics() { return normalizeAnalytics(await store.get(ANALYTICS_KEY, { type: "json", consistency: "strong" })); }
 async function writeAnalytics(data) { await store.setJSON(ANALYTICS_KEY, data, { cacheControl: "no-store" }); }
 
-async function recordDeviceVisit(request, body) {
+async function recordDeviceVisit(request, body, context = null) {
   const data = await readDeviceBehavior();
   const device = ensureDevice(data, request, body, true);
   if (!device) return null;
   // IP归属地：仅保存城市级信息；IP变化或归属地缺失时才重新解析
-  const ip = clientIp(request);
+  const ip = clientIp(request, context);
   const masked = maskIp(ip);
   if (masked && (device.ip_address !== masked || !device.ip_province)) {
     device.ip_address = masked;
-    const geo = await resolveIpGeo(ip);
+    // 优先用平台自带的地理位置（EdgeOne context.geo），没有再查第三方IP库
+    const geo = platformGeo(context) || await resolveIpGeo(ip);
     if (geo) {
-      device.ip_country = geo.country;
-      device.ip_province = geo.province;
-      device.ip_city = geo.city;
-      device.ip_isp = geo.isp;
+      device.ip_country = geo.country || device.ip_country;
+      device.ip_province = geo.province || device.ip_province;
+      device.ip_city = geo.city || device.ip_city;
+      device.ip_isp = geo.isp || device.ip_isp;
     }
   }
   data.logs.unshift({
@@ -399,7 +421,7 @@ async function recordUserAction(request) {
   return json({ ok: true, device_id: device.device_id }, 202);
 }
 
-async function recordAnonymousVisit(request) {
+async function recordAnonymousVisit(request, context = null) {
   const ua = request.headers.get("user-agent") || "";
   if (/bot|spider|crawler|headless|preview/i.test(ua)) return json({ ok: true, ignored: true }, 202);
   const body = await bodyJson(request);
@@ -424,7 +446,7 @@ async function recordAnonymousVisit(request) {
   const keepFrom = analyticsDateOffset(date, -89);
   for (const key of Object.keys(analytics.days)) if (key < keepFrom || key > date) delete analytics.days[key];
   await writeAnalytics(analytics);
-  const device = await recordDeviceVisit(request, body);
+  const device = await recordDeviceVisit(request, body, context);
   return json({ ok: true, device_id: device?.device_id || null }, 202);
 }
 
@@ -1720,11 +1742,11 @@ export async function onRequest(context) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
   try {
-    if (path === "/api/analytics/visit" && request.method === "POST") return await recordAnonymousVisit(request);
+    if (path === "/api/analytics/visit" && request.method === "POST") return await recordAnonymousVisit(request, context);
     if (path === "/api/analytics/action" && request.method === "POST") return await recordUserAction(request);
     if (path === "/api/menu-vote" && request.method === "POST") return await voteMenuDish(request);
     if (path === "/api/nasdaq100" && request.method === "GET") return await nasdaq100Response(url, typeof waitUntilFn === "function" ? waitUntilFn : null, request);
-    if (path === "/api/debug/ip" && request.method === "GET") return json(clientIpDebug(request));
+    if (path === "/api/debug/ip" && request.method === "GET") return json(clientIpDebug(request, context));
     if ((path === "/api/live-courses" || path.startsWith("/api/live-courses/") || path === "/api/courses") && request.method === "GET") {
       const state = await readState();
       const pathMajor = path.startsWith("/api/live-courses/") ? decodeURIComponent(path.slice("/api/live-courses/".length)) : null;
