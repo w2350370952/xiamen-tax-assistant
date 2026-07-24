@@ -19,5 +19,8 @@
     "react-dom": "latest",
     "tesseract.js": "^7.0.0",
     "vite": "latest"
+  },
+  "devDependencies": {
+    "vite-plugin-pwa": "^1.3.0"
   }
 }
