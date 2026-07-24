@@ -70,11 +70,15 @@ export function InstallBanner() {
   if (!visible || installed) return showGuide ? <InstallGuideModal channel={channel} onClose={() => setShowGuide(false)} /> : null;
   const close = () => { dismissInstallBanner(); setVisible(false); };
   const onAdd = async () => { const result = await install(); if (result === "done") { setVisible(false); return; } if (result === "guide") setShowGuide(true); };
+  const bannerText = channel === "wechat"
+    ? "在微信里打开较慢？建议用浏览器打开本站，再从浏览器菜单添加到手机桌面，以后一键直达。"
+    : "厦国会生活助手现已支持添加到手机桌面，打开更方便。";
+  const buttonText = channel === "wechat" ? "查看方法" : channel === "native" ? "立即添加" : "查看方法";
   return (
     <div className="install-banner" role="region" aria-label="添加到手机桌面提示">
       <Smartphone size={17} />
-      <p>厦国会生活助手现已支持添加到手机桌面，打开更方便。</p>
-      <button className="install-banner-add" onClick={onAdd}>立即添加</button>
+      <p>{bannerText}</p>
+      <button className="install-banner-add" onClick={onAdd}>{buttonText}</button>
       <button className="install-banner-close" onClick={close} aria-label="关闭提示"><X size={16} /></button>
       {showGuide && <InstallGuideModal channel={channel} onClose={() => setShowGuide(false)} />}
     </div>

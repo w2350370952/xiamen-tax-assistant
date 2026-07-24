@@ -42,9 +42,9 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: false,
-        // 预缓存核心静态资源；OCR/PDF等大文件按需运行时加载，不进预缓存
-        globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest}"],
-        globIgnores: ["**/assets/ocr/**", "**/assets/pdf.worker.js"],
+        // 预缓存只保留核心外壳（HTML+主包JS/CSS+图标），懒加载块（图表/财经/管理端）按需再取，
+        // 避免首次访问时后台下载大文件抢占带宽（微信内置浏览器尤为敏感）
+        globPatterns: ["index.html", "assets/index-*.js", "assets/index-*.css", "*.png", "*.ico", "manifest.webmanifest"],
         // 单页应用子路由刷新不404；API与OCR大文件不走页面回退
         navigateFallback: "/index.html",
         navigateFallbackDenylist: [/^\/api\//, /^\/assets\/ocr\//],
